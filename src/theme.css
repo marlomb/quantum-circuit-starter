@@ -161,6 +161,7 @@ html, body, #root {
   pointer-events: auto; /* toolbar clickable */
 }
 .canvas-shell { pointer-events: auto; } /* canvas interactive */
+.canvas-shell { overflow: auto; } /* plus the other styles we added earlier */
 
 .zoom-range {
   width: 160px;
