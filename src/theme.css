@@ -160,6 +160,19 @@ html, body, #root {
   backdrop-filter: blur(8px);
   pointer-events: auto; /* toolbar clickable */
 }
+
+/* theme.css */
+.circuit-board-bg {
+  background: radial-gradient(circle at 30% 30%, #0d1f0d, #020a02);
+  background-size: cover;
+}
+
+.circuit-board-wire {
+  stroke: #1aff66;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px #1aff66aa);
+}
+
 .canvas-shell { pointer-events: auto; } /* canvas interactive */
 .canvas-shell { overflow: auto; } /* plus the other styles we added earlier */
 .canvas-shell.panning { cursor: grabbing; }

@@ -955,14 +955,17 @@ const GateSVG = React.memo(function GateSVG({
 }) {
   const yCenter = (q: number) => q * cellH + cellH / 2;
   const xCenter = cellW / 2;
-  const gateColor = colors.gate;
-  const selColor = colors.select;
 
-  const tx = transformPx ? transformPx.tx : 0;
-  const ty = transformPx ? transformPx.ty : 0;
+  const q = gate.targets[0];
+  const x = xCenter - 20;
+  const y = q * cellH + cellH / 2 - 16;
+  const w = 40, h = 32;
 
-  const dragStroke = selected ? selColor : gateColor;
-  const dragWidth = selected ? 3 : 2;
+  const gateStroke = selected ? colors.select : "#1aff66"; // glowing PCB green
+  const chipFill = "#111"; // dark chip body
+
+  const tx = transformPx?.tx ?? 0;
+  const ty = transformPx?.ty ?? 0;
 
   const handleMouseDown = (evt: React.MouseEvent, dx = 0, dy = 0) => onMouseDown(evt, dx, dy);
   const handleTouchStart = (evt: React.TouchEvent, dx = 0, dy = 0) => {
@@ -971,63 +974,68 @@ const GateSVG = React.memo(function GateSVG({
     if (t0) onTouchStart(t0, dx, dy);
   };
 
-  if (gate.type === "CX") {
-    const [cIdx, tIdx] = gate.targets;
-    const x = xCenter;
-    const yC = yCenter(cIdx);
-    const diff = tIdx - cIdx;
-    const yT = yCenter(cIdx + diff);
-
-    return (
-      <g
-        className={selected ? "glow-strong" : "glow-soft"}
-        transform={`translate(${tx}, ${ty})`}
-        style={{ cursor: "grab", willChange: "transform" }}
-        onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
-        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
-      >
-        <line x1={x} y1={yC} x2={x} y2={yT} stroke="transparent" strokeWidth={18} pointerEvents="stroke" />
-        <line x1={x} y1={yC} x2={x} y2={yT} stroke={dragStroke} strokeWidth={dragWidth} />
-        <circle cx={x} cy={yC} r={6} fill={dragStroke} />
-        <circle cx={x} cy={yT} r={12} fill="none" stroke={dragStroke} strokeWidth={dragWidth} />
-        <line x1={x - 8} y1={yT} x2={x + 8} y2={yT} stroke={dragStroke} strokeWidth={dragWidth} />
-        <line x1={x} y1={yT - 8} x2={x} y2={yT + 8} stroke={dragStroke} strokeWidth={dragWidth} />
-      </g>
-    );
-  }
-
-  const q = gate.targets[0];
-  const x = xCenter - 20;
-  const y = q * cellH + cellH / 2 - 16;
-  const w = 40;
-  const h = 32;
-  const label = GATE_LABEL[gate.type];
-
   return (
     <g
-      className={selected ? "glow-strong" : "glow-soft"}
-      transform={`translate(${tx}, ${ty})`}
+      transform={`translate(${tx},${ty})`}
       style={{ cursor: "grab", willChange: "transform" }}
       onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
       onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
     >
+      {/* Glow filter */}
+      <defs>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor={gateStroke} floodOpacity="0.8"/>
+        </filter>
+      </defs>
+
+      {/* Gate background chip */}
       <rect
-        x={x - 6}
-        y={y - 6}
-        width={w + 12}
-        height={h + 12}
-        fill="transparent"
-        stroke="transparent"
-        strokeWidth={12}
-        pointerEvents="all"
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={6}
+        ry={6}
+        fill={chipFill}
+        stroke={gateStroke}
+        strokeWidth={selected ? 3 : 2}
+        filter="url(#glow)"
       />
-      {selected && (
-        <rect x={x - 4} y={y - 4} width={w + 8} height={h + 8} rx={10} ry={10} fill="none" stroke={selColor} strokeWidth={2} />
+
+      {/* Pins (gold solder pads) */}
+      <circle cx={x - 4} y={y + h/4} r={2} fill="#ffb300"/>
+      <circle cx={x - 4} y={y + (3*h)/4} r={2} fill="#ffb300"/>
+      <circle cx={x + w + 4} y={y + h/4} r={2} fill="#ffb300"/>
+      <circle cx={x + w + 4} y={y + (3*h)/4} r={2} fill="#ffb300"/>
+
+      {/* Gate symbol (custom per type) */}
+      {gate.type === "H" && (
+        <line x1={x+6} y1={y+6} x2={x+w-6} y2={y+h-6} stroke={gateStroke} strokeWidth={2}/>
       )}
-      <rect x={x} y={y} width={w} height={h} rx={8} ry={8} fill="none" stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
-      <text x={x + w / 2} y={y + h / 2 + 5} fontSize={16} textAnchor="middle" fill={selected ? selColor : gateColor}>
-        {label}
-      </text>
+      {gate.type === "X" && (
+        <>
+          <polygon
+            points={`${x+6},${y+4} ${x+w-6},${y+h/2} ${x+6},${y+h-4}`}
+            fill="none"
+            stroke={gateStroke}
+            strokeWidth={2}
+          />
+          <circle cx={x+w-2} cy={y+h/2} r={4} fill="none" stroke={gateStroke} strokeWidth={2}/>
+        </>
+      )}
+      {gate.type === "CX" && (
+        <>
+          <circle cx={x+10} cy={y+h/2} r={5} fill={gateStroke}/>
+          <path d={`M${x+18},${y+4} A10,10 0 1,1 ${x+18},${y+h-4}`} fill="none" stroke={gateStroke} strokeWidth={2}/>
+          <line x1={x+18} y1={y+4} x2={x+18} y2={y+h-4} stroke={gateStroke} strokeWidth={2}/>
+        </>
+      )}
+      {gate.type === "MEASURE" && (
+        <>
+          <rect x={x+6} y={y+6} width={w-12} height={h-12} rx={3} ry={3} stroke={gateStroke} fill="none"/>
+          <path d={`M${x+10},${y+h-10} q10,-12 20,0`} stroke={gateStroke} fill="none" strokeWidth={2}/>
+        </>
+      )}
     </g>
   );
 });
