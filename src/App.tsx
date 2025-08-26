@@ -519,7 +519,7 @@ function CircuitSVG({
     return `0 0 ${vbW} ${vbH}`;
   }, [width, height, aspect]);
 
-  // --- PRESS & HOLD (shared for mouse + touch)
+  // --- PRESS & HOLD (already in your version) ---
   const HOLD_MS = 200;
   const holdTimerRef = useRef<number | null>(null);
   const pendingRef = useRef<null | {
@@ -530,7 +530,7 @@ function CircuitSVG({
     pendingRef.current = data;
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     holdTimerRef.current = window.setTimeout(() => {
-      if (pendingRef.current) setDrag(pendingRef.current); // promote to active drag
+      if (pendingRef.current) setDrag(pendingRef.current);
     }, HOLD_MS);
   };
   const cancelHold = () => {
@@ -539,12 +539,11 @@ function CircuitSVG({
     pendingRef.current = null;
   };
 
-  // --- coords helpers
+  // --- coords helpers ---
   const toLocalFromXY = (clientX: number, clientY: number) => {
     const svg = svgRef.current!;
     const pt = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
+    pt.x = clientX; pt.y = clientY;
     const ctm = svg.getScreenCTM();
     const inv = ctm ? ctm.inverse() : null;
     const p = inv ? pt.matrixTransform(inv) : ({ x: 0, y: 0 } as any);
@@ -552,15 +551,45 @@ function CircuitSVG({
   };
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-  // --- mouse move/ups
+  // --- rAF throttle for preview (SMOOTHNESS #1) ---
+  const rafId = useRef<number | null>(null);
+  const pendingPreview = useRef<{ t: number; q: number } | null>(null);
+
+  const flushPreview = () => {
+    if (!pendingPreview.current) { rafId.current = null; return; }
+    // use functional set to avoid stale 'drag'
+    setDrag((d: typeof drag) => (d ? { ...d, preview: pendingPreview.current! } : d));
+    pendingPreview.current = null;
+    rafId.current = null;
+  };
+
+  const schedulePreview = (t: number, q: number) => {
+    pendingPreview.current = { t, q };
+    if (rafId.current == null) rafId.current = requestAnimationFrame(flushPreview);
+  };
+
+  // --- mouse move / touch move (write to pending + rAF) ---
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!drag) return;
     const { x, y } = toLocalFromXY(e.clientX, e.clientY);
     const t = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
     const q = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
-    setDrag({ ...drag, preview: { t, q } });
+    schedulePreview(t, q);
   };
 
+  const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (!drag) return;
+    const t0 = e.touches[0]; if (!t0) return;
+    const { x, y } = toLocalFromXY(t0.clientX, t0.clientY);
+    const t = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
+    const q = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
+    schedulePreview(t, q);
+    e.preventDefault();
+  };
+
+  useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
+
+  // --- drop logic (unchanged functional core) ---
   const dropAt = (x: number, y: number) => {
     let tNew = clamp(Math.round((x - drag!.dx) / cellW), 0, Math.max(0, cols - 1));
     if (tNew >= cols) {
@@ -612,27 +641,13 @@ function CircuitSVG({
     if (pendingRef.current) cancelHold();
   };
 
-  // --- touch move/ends
-  const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
-    if (!drag) return;
-    const t0 = e.touches[0];
-    if (!t0) return;
-    const { x, y } = toLocalFromXY(t0.clientX, t0.clientY);
-    const t = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
-    const q = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
-    setDrag({ ...drag, preview: { t, q } });
-    e.preventDefault(); // stop page scrolling while dragging
-  };
-
   const onTouchEnd = (e: React.TouchEvent<SVGSVGElement>) => {
     if (drag) {
-      // last known touch:
       const t0 = e.changedTouches[0];
       if (t0) {
         const { x, y } = toLocalFromXY(t0.clientX, t0.clientY);
         dropAt(x, y);
       } else {
-        // fallback: cancel
         setDrag(null);
         cancelHold();
       }
@@ -647,7 +662,8 @@ function CircuitSVG({
       ref={svgRef}
       viewBox={viewBox}
       width="100%"
-      style={{ background: T.bg, borderRadius: 12, touchAction: "none" }}  // important for touch dragging
+      style={{ background: T.bg, borderRadius: 12, touchAction: "none" }}
+      shapeRendering="geometricPrecision"
       onClick={(e) => {
         if ((e.target as HTMLElement).tagName === "svg") {
           cancelHold();
@@ -670,10 +686,10 @@ function CircuitSVG({
         <g transform={`translate(${labelW},0)`}>
           {/* grid */}
           {[...Array(wires + 1)].map((_, r) => (
-            <line key={r} x1={0} y1={r * cellH} x2={cols * cellW} y2={r * cellH} stroke={T.grid} strokeWidth={1} />
+            <line key={r} x1={0} y1={r * cellH} x2={cols * cellW} y2={r * cellH} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
           ))}
           {[...Array(cols + 1)].map((_, c) => (
-            <line key={c} x1={c * cellW} y1={0} x2={c * cellW} y2={wires * cellH} stroke={T.grid} strokeWidth={1} />
+            <line key={c} x1={c * cellW} y1={0} x2={c * cellW} y2={wires * cellH} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
           ))}
           {/* wires */}
           {[...Array(wires)].map((_, q) => (
@@ -685,6 +701,7 @@ function CircuitSVG({
               y2={q * cellH + cellH / 2}
               stroke={T.wire}
               strokeWidth={2}
+              pointerEvents="none"
             />
           ))}
 
@@ -694,7 +711,8 @@ function CircuitSVG({
               {m.gates.map((g) => (
                 <GateSVG
                   key={g.id}
-                  gate={drag && drag.id === g.id ? { ...g, targets: g.targets } : g}
+                  t={m.t}                                    // <-- pass moment index
+                  gate={g}
                   cellH={cellH}
                   cellW={cellW}
                   colors={T}
@@ -719,23 +737,25 @@ function CircuitSVG({
   );
 }
 
-function GateSVG({
+const GateSVG = React.memo(function GateSVG({
+  t,                 // moment (column) index of this gate
   gate,
   cellH,
   cellW,
   colors,
   selected,
   onMouseDown,
-  onTouchStart,   // <-- NEW
+  onTouchStart,
   preview,
 }: {
+  t: number;
   gate: Gate;
   cellH: number;
   cellW: number;
   colors: any;
   selected: boolean;
   onMouseDown: (evt: React.MouseEvent, dx: number, dy: number) => void;
-  onTouchStart?: (touch: Touch, dx: number, dy: number) => void;  // <-- NEW
+  onTouchStart?: (touch: Touch, dx: number, dy: number) => void;
   preview?: { t: number; q: number };
 }) {
   const yCenter = (q: number) => q * cellH + cellH / 2;
@@ -743,30 +763,50 @@ function GateSVG({
   const gateColor = colors.gate;
   const selColor = colors.select;
 
+  // compute preview transform (SMOOTHNESS #3: transforms)
+  // translate X by (preview.t - t) * cellW
+  // translate Y by:
+  //   - 1q: (preview.q - q0) * cellH
+  //   - CX: (preview.q - ctrlQ) * cellH (control moves; target keeps diff)
+  let tx = 0, ty = 0;
+  if (preview) {
+    tx = (preview.t - t) * cellW;
+    if (gate.type === "CX") {
+      const ctrl = gate.targets[0];
+      ty = (preview.q - ctrl) * cellH;
+    } else {
+      const q0 = gate.targets[0];
+      ty = (preview.q - q0) * cellH;
+    }
+  }
+
   const dragStroke = selected ? selColor : gateColor;
   const dragWidth = selected ? 3 : 2;
 
   const handleMouseDown = (evt: React.MouseEvent, dx = 0, dy = 0) => onMouseDown(evt, dx, dy);
   const handleTouchStart = (evt: React.TouchEvent, dx = 0, dy = 0) => {
     if (!onTouchStart) return;
-    const t = evt.touches[0];
-    onTouchStart(t, dx, dy);
+    const t0 = evt.touches[0];
+    if (t0) onTouchStart(t0, dx, dy);
   };
 
   if (gate.type === "CX") {
     const [cIdx, tIdx] = gate.targets;
     const x = xCenter;
-    const baseQ = preview ? preview.q : cIdx;
+    const baseQ = cIdx;
     const yC = yCenter(baseQ);
     const diff = tIdx - cIdx;
     const yT = yCenter(baseQ + diff);
 
     return (
       <g
+        transform={`translate(${tx}, ${ty})`}
+        style={{ cursor: "grab", willChange: "transform" }}
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
-        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}   // <-- NEW
-        style={{ cursor: "grab" }}
+        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
       >
+        {/* invisible fat hit area for easy grabbing */}
+        <line x1={x} y1={yC} x2={x} y2={yT} stroke="transparent" strokeWidth={18} pointerEvents="stroke" />
         <line x1={x} y1={yC} x2={x} y2={yT} stroke={dragStroke} strokeWidth={dragWidth} />
         <circle cx={x} cy={yC} r={6} fill={dragStroke} />
         <circle cx={x} cy={yT} r={12} fill="none" stroke={dragStroke} strokeWidth={dragWidth} />
@@ -776,7 +816,7 @@ function GateSVG({
     );
   }
 
-  const q = preview ? preview.q : gate.targets[0];
+  const q = gate.targets[0];
   const x = xCenter - 20;
   const y = q * cellH + cellH / 2 - 16;
   const w = 40;
@@ -785,10 +825,13 @@ function GateSVG({
 
   return (
     <g
+      transform={`translate(${tx}, ${ty})`}
+      style={{ cursor: "grab", willChange: "transform" }}
       onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
-      onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}     // <-- NEW
-      style={{ cursor: "grab" }}
+      onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
     >
+      {/* invisible hit area to grab easily */}
+      <rect x={x - 6} y={y - 6} width={w + 12} height={h + 12} fill="transparent" stroke="transparent" strokeWidth={12} pointerEvents="all" />
       {selected && (
         <rect x={x - 4} y={y - 4} width={w + 8} height={h + 8} rx={10} ry={10} fill="none" stroke={selColor} strokeWidth={2} />
       )}
@@ -798,7 +841,7 @@ function GateSVG({
       </text>
     </g>
   );
-}
+});
 
 function CountsTable({ counts }: { counts: Record<string, number> }) {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
