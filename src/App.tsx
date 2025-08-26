@@ -160,7 +160,7 @@ export default function App() {
   const [circuit, setCircuit] = useState<Circuit>(() => emptyCircuit(2));
   const [shots, setShots] = useState(512);
   const [theme, setTheme] = useState<ThemeKey>("light");
-  const [padding, setPadding] = useState(24);
+  //const [padding, setPadding] = useState(24);
   const [aspect, setAspect] = useState("auto");
   const [selected, setSelected] = useState<{ t: number; id: string } | null>(null);
 
@@ -479,11 +479,6 @@ export default function App() {
                 onChange={(e) => setShots(parseInt(e.target.value || "512"))} style={{ width: 92 }} />
             </label>
             <label>
-              Padding
-              <input className="range" type="range" min={0} max={64} value={padding}
-                onChange={(e) => setPadding(parseInt(e.target.value))} />
-            </label>
-            <label>
               Aspect
               <select className="select" value={aspect} onChange={(e) => setAspect(e.target.value)}>
                 <option value="auto">auto</option><option value="16:9">16:9</option>
@@ -626,10 +621,9 @@ export default function App() {
   );
 }
 
-// ================= CircuitSVG (press-and-hold + smooth drag; zoom via pixel size) =================
+// ================= CircuitSVG (zoom + scroll, no padding) =================
 function CircuitSVG({
   circuit,
-  padding,
   themeKey,
   aspect,
   svgRef,
@@ -642,7 +636,6 @@ function CircuitSVG({
   zoom,
 }: {
   circuit: Circuit;
-  padding: number;
   themeKey: ThemeKey;
   aspect: string;
   svgRef: React.RefObject<SVGSVGElement | null>;
@@ -663,44 +656,51 @@ function CircuitSVG({
   zoom: number;
 }) {
   const T = THEMES[themeKey];
+
   const cellW = 72;
   const cellH = 56;
   const labelW = 36;
   const wires = circuit.nQubits;
   const cols = Math.max(1, circuit.moments.length || 1);
-  const width = padding * 2 + labelW + cols * cellW;
-  const height = padding * 2 + wires * cellH;
 
-  // content size in SVG units
-  const contentW = width;
-  const contentH = height;
+  // base content size in SVG units (no padding)
+  const contentW = labelW + cols * cellW;
+  const contentH = wires * cellH;
 
-  // scaled pixel size drives scrollbars
+  // scaled pixel size → drives scrollbars
   const pxW = Math.max(1, Math.round(contentW * zoom));
   const pxH = Math.max(1, Math.round(contentH * zoom));
 
-  // keep units stable for math
-  const viewBox = useMemo(() => {
-    if (aspect === "auto") return `0 0 ${contentW} ${contentH}`;
-    const [aw, ah] = aspect.split(":").map(Number);
-    // Maintain aspect by letterboxing viewBox but keep pixel size in pxW/pxH
-    const targetH = (contentH * aw) / ah;
-    const vbH = Math.max(contentH, targetH);
-    const vbW = (vbH * aw) / ah;
-    return `0 0 ${vbW} ${vbH}`;
-  }, [contentW, contentH, aspect]);
+  const viewBox = `0 0 ${contentW} ${contentH}`;
 
-  // --- Press & Hold to start drag
+  // --- Press & Hold drag setup ---
   const HOLD_MS = 200;
   const holdTimerRef = useRef<number | null>(null);
-  const pendingRef = useRef<null | {
-    id: string; t: number; type: GateType; targets: number[]; dx: number; dy: number;
-  }>(null);
+  const pendingRef = useRef<
+    | null
+    | {
+        id: string;
+        t: number;
+        type: GateType;
+        targets: number[];
+        dx: number;
+        dy: number;
+      }
+  >(null);
 
-  const startHold = (data: { id: string; t: number; type: GateType; targets: number[]; dx: number; dy: number; }) => {
+  const startHold = (data: {
+    id: string;
+    t: number;
+    type: GateType;
+    targets: number[];
+    dx: number;
+    dy: number;
+  }) => {
     pendingRef.current = data;
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = window.setTimeout(() => { if (pendingRef.current) setDrag(pendingRef.current); }, HOLD_MS);
+    holdTimerRef.current = window.setTimeout(() => {
+      if (pendingRef.current) setDrag(pendingRef.current);
+    }, HOLD_MS);
   };
   const cancelHold = () => {
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
@@ -708,23 +708,28 @@ function CircuitSVG({
     pendingRef.current = null;
   };
 
-  // coords helpers (CTM handles zoom scaling)
+  // --- coords helper
   const toLocalFromXY = (clientX: number, clientY: number) => {
     const svg = svgRef.current!;
     const pt = svg.createSVGPoint();
-    pt.x = clientX; pt.y = clientY;
+    pt.x = clientX;
+    pt.y = clientY;
     const ctm = svg.getScreenCTM();
     const inv = ctm ? ctm.inverse() : null;
     const p = inv ? pt.matrixTransform(inv) : ({ x: 0, y: 0 } as any);
-    return { x: p.x - padding - labelW, y: p.y - padding };
+    // subtract only labelW on X (no padding)
+    return { x: p.x - labelW, y: p.y };
   };
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-  // rAF for smooth pixel transform during drag
+  // --- smooth transform while dragging
   const rafId = useRef<number | null>(null);
   const pendingPx = useRef<{ tx: number; ty: number } | null>(null);
   const flushPx = () => {
-    if (!pendingPx.current) { rafId.current = null; return; }
+    if (!pendingPx.current) {
+      rafId.current = null;
+      return;
+    }
     const px = pendingPx.current;
     setDrag((d: typeof drag) => (d ? { ...d, transformPx: px } : d));
     pendingPx.current = null;
@@ -736,7 +741,7 @@ function CircuitSVG({
   };
   useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
-  // pointer move for drag preview
+  // --- drag move handlers
   const handleDragMove = (clientX: number, clientY: number) => {
     if (!drag) return;
     const { x, y } = toLocalFromXY(clientX, clientY);
@@ -746,10 +751,12 @@ function CircuitSVG({
     schedulePx(x - baseX, y - baseY);
   };
 
-  // drop logic (snap to grid)
+  // --- drop logic
   const dropAtLocal = (clientX: number, clientY: number) => {
+    if (!drag) return;
     const { x, y } = toLocalFromXY(clientX, clientY);
-    let tNew = clamp(Math.round((x - drag!.dx) / cellW), 0, Math.max(0, cols - 1));
+
+    let tNew = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
     if (tNew >= cols) {
       setCircuit((c) => {
         const ms = [...c.moments];
@@ -758,35 +765,49 @@ function CircuitSVG({
       });
       tNew = cols;
     }
-    const qNew = clamp(Math.round((y - drag!.dy) / cellH), 0, circuit.nQubits - 1);
+    const qNew = clamp(Math.round((y - drag.dy) / cellH), 0, circuit.nQubits - 1);
 
     setCircuit((c) => {
       const ms = c.moments.map((m) => ({ ...m, gates: [...m.gates] }));
-      const from = ms[drag!.t];
-      const gIdx = from.gates.findIndex((gg) => gg.id === drag!.id);
+      const from = ms[drag.t];
+      const gIdx = from.gates.findIndex((gg) => gg.id === drag.id);
       if (gIdx >= 0) from.gates.splice(gIdx, 1);
+
       while (ms.length <= tNew) ms.push({ t: ms.length, gates: [] });
       const to = ms[tNew];
 
-      if (drag!.type === "CX") {
-        const diff = drag!.targets[1] - drag!.targets[0];
+      if (drag.type === "CX") {
+        const diff = drag.targets[1] - drag.targets[0];
         const qCtrl = qNew;
         let qTgt = clamp(qCtrl + diff, 0, c.nQubits - 1);
         if (qTgt !== qCtrl + diff) {
           const qCtrlAdj = clamp(qTgt - diff, 0, c.nQubits - 1);
-          to.gates.push({ id: drag!.id, type: "CX", targets: [qCtrlAdj, qCtrlAdj + diff] });
+          to.gates.push({ id: drag.id, type: "CX", targets: [qCtrlAdj, qCtrlAdj + diff] });
         } else {
-          to.gates.push({ id: drag!.id, type: "CX", targets: [qCtrl, qTgt] });
+          to.gates.push({ id: drag.id, type: "CX", targets: [qCtrl, qTgt] });
         }
       } else {
-        to.gates.push({ id: drag!.id, type: drag!.type as GateType, targets: [qNew] });
+        to.gates.push({ id: drag.id, type: drag.type as GateType, targets: [qNew] });
       }
+
       return { ...c, moments: ms };
     });
 
-    onSelect(tNew, drag!.id);
+    onSelect(tNew, drag.id);
     setDrag(null);
     cancelHold();
+  };
+
+  const onMouseUpWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (drag) {
+      dropAtLocal(e.clientX, e.clientY);
+      return;
+    }
+    if (pendingRef.current) cancelHold();
+  };
+
+  const onMouseMoveWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (drag) { handleDragMove(e.clientX, e.clientY); }
   };
 
   return (
@@ -803,115 +824,121 @@ function CircuitSVG({
           onDeselect();
         }
       }}
-      onMouseMove={(e) => { if (drag) handleDragMove(e.clientX, e.clientY); }}
-      onMouseUp={(e) => {
-        if (drag) { dropAtLocal(e.clientX, e.clientY); return; }
-        if (pendingRef.current) cancelHold();
-      }}
-      onTouchMove={(e) => {
-        if (!drag) return;
-        const t0 = e.touches[0]; if (!t0) return;
-        handleDragMove(t0.clientX, t0.clientY);
-        e.preventDefault();
-      }}
-      onTouchEnd={(e) => {
-        if (drag) {
-          const t0 = e.changedTouches[0];
-          if (t0) dropAtLocal(t0.clientX, t0.clientY);
-          else { setDrag(null); cancelHold(); }
-          e.preventDefault();
-          return;
-        }
-        if (pendingRef.current) cancelHold();
-      }}
+      onMouseMove={onMouseMoveWrapper}
+      onMouseUp={onMouseUpWrapper}
     >
-      <g transform={`translate(${padding}, ${padding})`}>
-        {/* qubit labels */}
+      {/* Qubit labels */}
+      {Array.from({ length: wires }).map((_, q) => (
+        <text
+          key={q}
+          x={0}
+          y={q * cellH + cellH / 2 + 5}
+          textAnchor="start"
+          fill={T.label}
+          fontSize={12}
+          style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}
+        >
+          {`q${q}`}
+        </text>
+      ))}
+
+      {/* Grid + wires + gates */}
+      <g transform={`translate(${labelW},0)`}>
+        {/* grid */}
+        {Array.from({ length: wires + 1 }).map((_, r) => (
+          <line
+            key={r}
+            x1={0}
+            y1={r * cellH}
+            x2={cols * cellW}
+            y2={r * cellH}
+            stroke={T.grid}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+        ))}
+        {Array.from({ length: cols + 1 }).map((_, c) => (
+          <line
+            key={c}
+            x1={c * cellW}
+            y1={0}
+            x2={c * cellW}
+            y2={wires * cellH}
+            stroke={T.grid}
+            strokeWidth={1}
+            pointerEvents="none"
+          />
+        ))}
+        {/* wires */}
         {Array.from({ length: wires }).map((_, q) => (
-          <text
+          <line
             key={q}
-            x={0}
-            y={q * 56 + 56 / 2 + 5}
-            textAnchor="start"
-            fill={T.label}
-            fontSize={12}
-            style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}
-          >
-            {`q${q}`}
-          </text>
+            x1={0}
+            y1={q * cellH + cellH / 2}
+            x2={cols * cellW}
+            y2={q * cellH + cellH / 2}
+            stroke={T.wire}
+            strokeWidth={2}
+            pointerEvents="none"
+          />
         ))}
 
-        <g transform={`translate(${labelW},0)`}>
-          {/* grid */}
-          {Array.from({ length: wires + 1 }).map((_, r) => (
-            <line key={r} x1={0} y1={r * 56} x2={cols * 72} y2={r * 56} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
-          ))}
-          {Array.from({ length: cols + 1 }).map((_, c) => (
-            <line key={c} x1={c * 72} y1={0} x2={c * 72} y2={wires * 56} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
-          ))}
-          {/* wires */}
-          {Array.from({ length: wires }).map((_, q) => (
-            <line key={q} x1={0} y1={q * 56 + 56 / 2} x2={cols * 72} y2={q * 56 + 56 / 2} stroke={T.wire} strokeWidth={2} pointerEvents="none" />
-          ))}
-          {/* snap cell highlight while dragging */}
-          {drag && (
-            <g>
-              {(() => {
-                const cellW = 72, cellH = 56;
-                const tx = drag.transformPx?.tx ?? 0;
-                const ty = drag.transformPx?.ty ?? 0;
-                const px = drag.t * cellW + drag.dx + tx;
-                const py = drag.targets[0] * cellH + drag.dy + ty;
-
-                const c = Math.round((px - drag.dx) / cellW);
-                const r = Math.round((py - drag.dy) / cellH);
-                const x = c * cellW;
-                const y = r * cellH;
-
-                return (
-                  <rect
-                    x={x - 2}
-                    y={y - 2}
-                    width={cellW + 4}
-                    height={cellH + 4}
-                    fill="none"
-                    stroke={T.select}
-                    strokeOpacity={0.35}
-                    strokeDasharray="6 6"
-                    rx={8}
-                    ry={8}
-                  />
-                );
-              })()}
-            </g>
-          )}
-          {/* gates */}
-          {circuit.moments.map((m) => (
-            <g key={m.t} transform={`translate(${m.t * 72},0)`}>
-              {m.gates.map((g) => (
-                <GateSVG
-                  key={g.id}
-                  t={m.t}
-                  gate={g}
-                  cellH={56}
-                  cellW={72}
-                  colors={T}
-                  selected={!!selected && selected.id === g.id && selected.t === m.t}
-                  onMouseDown={(evt, dx, dy) => {
-                    evt.stopPropagation();
-                    onSelect(m.t, g.id);
-                    startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-                  }}
-                  onTouchStart={(touch, dx, dy) => {
-                    onSelect(m.t, g.id);
-                    startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-                  }}
-                  transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
+        {/* snap cell highlight while dragging */}
+        {drag && (
+          <g>
+            {(() => {
+              const tx = drag.transformPx?.tx ?? 0;
+              const ty = drag.transformPx?.ty ?? 0;
+              const px = drag.t * cellW + drag.dx + tx;
+              const py = drag.targets[0] * cellH + drag.dy + ty;
+              const c = Math.round((px - drag.dx) / cellW);
+              const r = Math.round((py - drag.dy) / cellH);
+              const x = c * cellW;
+              const y = r * cellH;
+              return (
+                <rect
+                  x={x - 2}
+                  y={y - 2}
+                  width={cellW + 4}
+                  height={cellH + 4}
+                  fill="none"
+                  stroke={T.select}
+                  strokeOpacity={0.35}
+                  strokeDasharray="6 6"
+                  rx={8}
+                  ry={8}
                 />
-              ))}
-            </g>
-          ))}
-        </g>
+              );
+            })()}
+          </g>
+        )}
+
+        {/* gates */}
+        {circuit.moments.map((m) => (
+          <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
+            {m.gates.map((g) => (
+              <GateSVG
+                key={g.id}
+                t={m.t}
+                gate={g}
+                cellH={cellH}
+                cellW={cellW}
+                colors={T}
+                selected={!!selected && selected.id === g.id && selected.t === m.t}
+                onMouseDown={(evt, dx, dy) => {
+                  evt.stopPropagation();
+                  onSelect(m.t, g.id);
+                  startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+                }}
+                onTouchStart={(evt, dx, dy) => {
+                  onSelect(m.t, g.id);
+                  startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+                }}
+                transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
+              />
+            ))}
+          </g>
+        ))}
       </g>
     </svg>
   );
