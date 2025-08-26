@@ -160,8 +160,6 @@ export default function App() {
   const [circuit, setCircuit] = useState<Circuit>(() => emptyCircuit(2));
   const [shots, setShots] = useState(512);
   const [theme, setTheme] = useState<ThemeKey>("light");
-  //const [padding, setPadding] = useState(24);
-  const [aspect, setAspect] = useState("auto");
   const [selected, setSelected] = useState<{ t: number; id: string } | null>(null);
 
   // drag state
@@ -478,13 +476,6 @@ export default function App() {
               <input className="input" type="number" min={1} max={100000} value={shots}
                 onChange={(e) => setShots(parseInt(e.target.value || "512"))} style={{ width: 92 }} />
             </label>
-            <label>
-              Aspect
-              <select className="select" value={aspect} onChange={(e) => setAspect(e.target.value)}>
-                <option value="auto">auto</option><option value="16:9">16:9</option>
-                <option value="4:3">4:3</option><option value="1:1">1:1</option>
-              </select>
-            </label>
           </div>
         </header>
 
@@ -596,7 +587,6 @@ export default function App() {
                 <CircuitSVG
                   circuit={circuit}
                   themeKey={theme}
-                  aspect={aspect}
                   svgRef={svgRef}
                   selected={selected}
                   onDeselect={() => setSelected(null)}
@@ -624,7 +614,6 @@ export default function App() {
 function CircuitSVG({
   circuit,
   themeKey,
-  aspect,
   svgRef,
   selected,
   onDeselect,
@@ -636,7 +625,6 @@ function CircuitSVG({
 }: {
   circuit: Circuit;
   themeKey: ThemeKey;
-  aspect: string;
   svgRef: React.RefObject<SVGSVGElement | null>;
   selected: { t: number; id: string } | null;
   onDeselect: () => void;
