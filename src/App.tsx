@@ -456,7 +456,7 @@ export default function App() {
 
   return (
     <div className="app-wrap">
-      <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+      <header className="row" style={{ justifyContent: "space-between", marginBottom: 12, padding: "16px 24px" }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Quantum Circuit Designer</h1>
         <div className="row">
           <button
@@ -499,11 +499,14 @@ export default function App() {
 
       <section
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(280px, 360px) 1fr",
-          gap: 16,
-          width: "100%",           // ensure full width
-        }}
+        flex: 1,                              // take all remaining vertical space
+        display: "grid",
+        gridTemplateColumns: "minmax(280px, 360px) 1fr",
+        gap: 16,
+        width: "100%",
+       padding: "0 24px 24px 24px",          // consistent gutter
+       boxSizing: "border-box",
+     }}
       >
         {/* Left: Panels */}
         <div className="stack">
