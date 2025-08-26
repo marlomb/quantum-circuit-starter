@@ -571,7 +571,7 @@ function CircuitSVG({
         // if clamped moved target out of bounds, adjust control to keep diff
         if (qTgt !== qCtrl + diff) {
           // shift both so target fits
-          const sign = Math.sign(diff) || 1;
+          // const sign = Math.sign(diff) || 1;
           let qCtrlAdj = clamp(qTgt - diff, 0, c.nQubits - 1);
           // ensure within range
           if (qCtrlAdj < 0 || qCtrlAdj > c.nQubits - 1) qCtrlAdj = qCtrl;
@@ -643,10 +643,10 @@ function CircuitSVG({
                   colors={T}
                   selected={!!selected && selected.id === g.id && selected.t === m.t}
                   onMouseDown={(evt, dx, dy) => {
-                    evt.stopPropagation();
-                    setSelected({ t: m.t, id: g.id });
+                  evt.stopPropagation();
+                    onSelect(m.t, g.id);
                     setDrag({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-                  }}
+                    }}
                   isDragging={!!drag && drag.id === g.id}
                   preview={drag && drag.id === g.id ? drag.preview : undefined}
                 />
@@ -675,7 +675,8 @@ function GateSVG({
   colors: any;
   selected: boolean;
   onMouseDown: (evt: React.MouseEvent, dx: number, dy: number) => void;
-  isDragging: boolean;
+  //isDragging: boolean;
+  //preview?: { t: number; q: number };
   preview?: { t: number; q: number };
 }) {
   const yCenter = (q: number) => q * cellH + cellH / 2;
