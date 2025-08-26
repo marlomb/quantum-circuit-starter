@@ -162,6 +162,16 @@ html, body, #root {
 }
 .canvas-shell { pointer-events: auto; } /* canvas interactive */
 .canvas-shell { overflow: auto; } /* plus the other styles we added earlier */
+.canvas-shell.panning { cursor: grabbing; }
+.canvas-shell { cursor: default; }
+
+/* WebKit */
+.canvas-shell::-webkit-scrollbar { height: 10px; width: 10px; }
+.canvas-shell::-webkit-scrollbar-track { background: rgba(255,255,255,.04); border-radius: 8px; }
+.canvas-shell::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 8px; }
+.canvas-shell::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.26); }
+/* Firefox */
+.canvas-shell { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) rgba(255,255,255,.06); }
 
 .zoom-range {
   width: 160px;

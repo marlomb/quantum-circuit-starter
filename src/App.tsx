@@ -209,12 +209,21 @@ export default function App() {
 
   // Wheel/trackpad pinch to zoom (container-level) with cursor anchor
   const onContainerWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    // zoom always
     e.preventDefault();
     const el = svgContainerRef.current;
     if (!el) return;
 
-    const delta = -e.deltaY; // up => zoom in
-    const factor = Math.exp(delta * 0.0015);
+    // Normalize deltas across devices/browsers
+    // deltaMode: 0=pixel, 1=line, 2=page
+    const LINE_HEIGHT = 16; // typical line height
+    const deltaY =
+      e.deltaMode === 1 ? e.deltaY * LINE_HEIGHT :
+      e.deltaMode === 2 ? e.deltaY * window.innerHeight :
+      e.deltaY;
+
+    const delta = -deltaY; // up => zoom in
+    const factor = Math.exp(delta * 0.0012); // slightly gentler
     const newZ = Math.min(3, Math.max(0.4, canvasZoom * factor));
 
     const rect = el.getBoundingClientRect();
@@ -232,6 +241,65 @@ export default function App() {
       el.scrollTop  = uy * newZ - cy;
     });
   };
+
+  useEffect(() => {
+    const el = svgContainerRef.current;
+
+    const onDbl = () => setFitKey(k => k + 1);
+    el?.addEventListener("dblclick", onDbl);
+
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "0") { e.preventDefault(); setFitKey(k => k + 1); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+        e.preventDefault();
+        setCanvasZoom(1);
+        const c = svgContainerRef.current; if (c) { c.scrollLeft = 0; c.scrollTop = 0; }
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === "=" || e.key === "+") { // zoom in
+          const c = svgContainerRef.current; if (!c) return;
+          const cx = c.clientWidth / 2, cy = c.clientHeight / 2;
+          const ux = (c.scrollLeft + cx) / canvasZoom;
+          const uy = (c.scrollTop  + cy) / canvasZoom;
+          const z = Math.min(3, +(canvasZoom * 1.1).toFixed(2));
+          setCanvasZoom(z);
+          requestAnimationFrame(() => { c.scrollLeft = ux * z - cx; c.scrollTop = uy * z - cy; });
+        }
+        if (e.key === "-" || e.key === "_") { // zoom out
+          const c = svgContainerRef.current; if (!c) return;
+          const cx = c.clientWidth / 2, cy = c.clientHeight / 2;
+          const ux = (c.scrollLeft + cx) / canvasZoom;
+          const uy = (c.scrollTop  + cy) / canvasZoom;
+          const z = Math.max(0.4, +(canvasZoom / 1.1).toFixed(2));
+          setCanvasZoom(z);
+          requestAnimationFrame(() => { c.scrollLeft = ux * z - cx; c.scrollTop = uy * z - cy; });
+        }
+        if (e.key.toLowerCase() === "f") setFitKey(k => k + 1);
+        if (e.key.toLowerCase() === "s" && selected) {
+          // center on selected gate
+          const cellW = 72, cellH = 56, labelW = 36;
+          const m = circuit.moments.find(mm => mm.t === selected.t);
+          const g = m?.gates.find(gg => gg.id === selected.id);
+          if (!g) return;
+          const gx = 24 + labelW + selected.t * cellW + cellW / 2;
+          const gy = 24 + (g.targets[0] * cellH) + cellH / 2;
+
+          const c = svgContainerRef.current; if (!c) return;
+          const targetLeft = gx * canvasZoom - c.clientWidth / 2;
+          const targetTop  = gy * canvasZoom - c.clientHeight / 2;
+          c.scrollLeft = Math.max(0, targetLeft);
+          c.scrollTop  = Math.max(0, targetTop);
+        }
+      }
+    };
+
+  window.addEventListener("keydown", onKey);
+  return () => {
+    el?.removeEventListener("dblclick", onDbl);
+    window.removeEventListener("keydown", onKey);
+  };
+}, [canvasZoom, selected, circuit]);
+
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -475,7 +543,7 @@ export default function App() {
               <h3 style={{ marginTop: 0 }}>Circuit</h3>
 
               <div
-                className="canvas-shell"
+                className={`canvas-shell${panStartRef.current ? " panning" : ""}`}
                 ref={svgContainerRef}
                 onWheel={onContainerWheel}
                 onMouseDown={(e) => {
@@ -484,9 +552,7 @@ export default function App() {
                     beginPanScroll(e.clientX, e.clientY);
                   }
                 }}
-                onMouseMove={(e) => {
-                  if (panStartRef.current) movePanScroll(e.clientX, e.clientY);
-                }}
+                onMouseMove={(e) => { if (panStartRef.current) movePanScroll(e.clientX, e.clientY); }}
                 onMouseUp={() => endPanScroll()}
                 onMouseLeave={() => endPanScroll()}
               >
@@ -787,7 +853,38 @@ function CircuitSVG({
           {Array.from({ length: wires }).map((_, q) => (
             <line key={q} x1={0} y1={q * 56 + 56 / 2} x2={cols * 72} y2={q * 56 + 56 / 2} stroke={T.wire} strokeWidth={2} pointerEvents="none" />
           ))}
+          {/* snap cell highlight while dragging */}
+          {drag && (
+            <g>
+              {(() => {
+                const cellW = 72, cellH = 56;
+                const tx = drag.transformPx?.tx ?? 0;
+                const ty = drag.transformPx?.ty ?? 0;
+                const px = drag.t * cellW + drag.dx + tx;
+                const py = drag.targets[0] * cellH + drag.dy + ty;
 
+                const c = Math.round((px - drag.dx) / cellW);
+                const r = Math.round((py - drag.dy) / cellH);
+                const x = c * cellW;
+                const y = r * cellH;
+
+                return (
+                  <rect
+                    x={x - 2}
+                    y={y - 2}
+                    width={cellW + 4}
+                    height={cellH + 4}
+                    fill="none"
+                    stroke={T.select}
+                    strokeOpacity={0.35}
+                    strokeDasharray="6 6"
+                    rx={8}
+                    ry={8}
+                  />
+                );
+              })()}
+            </g>
+          )}
           {/* gates */}
           {circuit.moments.map((m) => (
             <g key={m.t} transform={`translate(${m.t * 72},0)`}>
