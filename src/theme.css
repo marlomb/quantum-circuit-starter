@@ -107,8 +107,17 @@ svg{ shape-rendering:geometricPrecision; }
 .responsive-grid {
   grid-template-columns: 320px 1fr;
 }
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;         /* kill the default 8px body margin */
+  padding: 0;
+}
+* { box-sizing: border-box; }
+.neon-bg { width: 100vw; min-height: 100vh; }
+.app-wrap { width: 100%; padding: 16px; }
+.responsive-grid { grid-template-columns: 320px 1fr; }
 @media (max-width: 900px) {
-  .responsive-grid {
-    grid-template-columns: 1fr; /* stack on small screens */
-  }
+  .responsive-grid { grid-template-columns: 1fr; }
 }

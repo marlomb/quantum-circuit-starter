@@ -323,7 +323,7 @@ export default function App() {
   return (
     
     <div className="neon-bg" style={{ color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}>
-    <div style={{ width: "100%", padding: 16 }}>
+    <div className="app-wrap">
       <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
         <h1 className="h1" style={{ fontSize: 22, fontWeight: 700 }}>Quantum Circuit Designer</h1>
         <div className="row">
@@ -357,8 +357,7 @@ export default function App() {
         </div>
       </header>
 
-        <section
-  style={{display: "grid", gridTemplateColumns: "1fr", gap: 16,}} className="responsive-grid">
+        <section className="responsive-grid" style={{ display: "grid", gap: 16 }}>
           {/* Left: Controls */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
            <div className="card" style={{ padding: 12 }}>
