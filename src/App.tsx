@@ -439,14 +439,14 @@ export default function App() {
     const el = svgContainerRef.current;
     if (!el) return;
 
-    // match CircuitSVG's content metrics:
+    // match CircuitSVG’s content metrics (NO padding)
     const cellW = 72, cellH = 56, labelW = 36;
     const cols = Math.max(1, circuit.moments.length || 1);
-    const contentW = padding * 2 + labelW + cols * cellW;
-    const contentH = padding * 2 + circuit.nQubits * cellH;
+    const contentW = labelW + cols * cellW;
+    const contentH = circuit.nQubits * cellH;
 
     const margin = 16;
-    const fitX = contentW / Math.max(1, el.clientWidth - margin);
+    const fitX = contentW / Math.max(1, el.clientWidth  - margin);
     const fitY = contentH / Math.max(1, el.clientHeight - margin);
     const z = 1 / Math.max(fitX, fitY);
     const nz = Math.min(3, Math.max(0.4, +z.toFixed(2)));
@@ -454,10 +454,10 @@ export default function App() {
 
     requestAnimationFrame(() => {
       const pxW = contentW * nz, pxH = contentH * nz;
-      el.scrollLeft = Math.max(0, (pxW - el.clientWidth) / 2);
+      el.scrollLeft = Math.max(0, (pxW - el.clientWidth)  / 2);
       el.scrollTop  = Math.max(0, (pxH - el.clientHeight) / 2);
     });
-  }, [fitKey, circuit.moments.length, circuit.nQubits, padding]);
+  }, [fitKey, circuit.moments.length, circuit.nQubits]); // ← remove `padding` from deps
 
   return (
     <div className="neon-bg" style={{ color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}>
@@ -595,7 +595,6 @@ export default function App() {
 
                 <CircuitSVG
                   circuit={circuit}
-                  padding={padding}
                   themeKey={theme}
                   aspect={aspect}
                   svgRef={svgRef}
