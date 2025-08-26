@@ -158,7 +158,9 @@ html, body, #root {
   border-radius: 10px;
   padding: 6px 8px;
   backdrop-filter: blur(8px);
+  pointer-events: auto; /* toolbar clickable */
 }
+.canvas-shell { pointer-events: auto; } /* canvas interactive */
 
 .zoom-range {
   width: 160px;

@@ -189,6 +189,10 @@ export default function App() {
   >(null);
 
   // zoom & pan state for the circuit canvas
+  useEffect(() => {
+    setFitKey((k) => k + 1);
+  }, [circuit.moments.length, circuit.nQubits]);
+
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const svgContainerRef = useRef<HTMLDivElement | null>(null);
@@ -753,6 +757,7 @@ function CircuitSVG({
   };
 
   // --- Fit to container whenever fitKey changes or content size changes
+  
   useEffect(() => {
     const el = containerRef.current;
     const svg = svgRef.current;
@@ -778,38 +783,31 @@ function CircuitSVG({
 
   // --- SVG event bindings (wrap panning + dragging)
   const onMouseDownWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (e.button === 1 /* middle */ || (e.button === 0 && (e as any).nativeEvent?.buttons === 1 && (e as any).nativeEvent?.shiftKey) || (e.button === 0 && (e as any).nativeEvent && (e as any).nativeEvent?.which === 1 && (e as any).nativeEvent?.ctrlKey)) {
-      // alt/ctrl/shift optional variants if you want, but primary: middle or Space in move handler
-      e.preventDefault();
-    }
-    if (e.button === 1 || (e.button === 0 && (e as any).nativeEvent?.buttons === 1 && (e as any).nativeEvent?.altKey)) {
-      // middle or left+Alt starts pan (optional)
-      startPan(e.clientX, e.clientY);
-    }
-  };
+  if (e.button === 1 || spaceDown) {
+    e.preventDefault();
+    startPan(e.clientX, e.clientY);
+  }
+};
 
-  const onMouseMoveWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (spaceDown || panStart.current) {
-      // pan mode
-      if (!panStart.current) startPan(e.clientX, e.clientY);
-      movePan(e.clientX, e.clientY);
-      return;
-    }
-    // gate drag preview
-    if (drag) handleDragMove(e.clientX, e.clientY);
-  };
+const onMouseMoveWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+  if (panStart.current) {
+    movePan(e.clientX, e.clientY);
+    return;
+  }
+  if (drag) handleDragMove(e.clientX, e.clientY);
+};
 
-  const onMouseUpWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (panStart.current) {
-      endPan();
-      return;
-    }
-    if (drag) {
-      dropAtLocal(e.clientX, e.clientY);
-      return;
-    }
-    if (pendingRef.current) cancelHold();
-  };
+const onMouseUpWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+  if (panStart.current) {
+    endPan();
+    return;
+  }
+  if (drag) {
+    dropAtLocal(e.clientX, e.clientY);
+    return;
+  }
+  if (pendingRef.current) cancelHold();
+};
 
   const onTouchMoveWrapper = (e: React.TouchEvent<SVGSVGElement>) => {
     if (!drag) return;
@@ -834,34 +832,34 @@ function CircuitSVG({
   };
 
   const onWheelWrapper = (e: React.WheelEvent<SVGSVGElement>) => {
-    // Ctrl/Meta wheel zoom (also catches pinch on many trackpads)
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = -e.deltaY; // up => positive
-      const factor = Math.exp(delta * 0.0015);
-      const newZ = Math.min(2.5, Math.max(0.4, zoom * factor));
+  // Zoom on any wheel/trackpad gesture (including pinch). Prevent page scroll.
+  e.preventDefault();
 
-      const svg = svgRef.current!;
-      const pt = svg.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const ctm = svg.getScreenCTM();
-      if (!ctm) return;
-      const inv = ctm.inverse();
-      const p = pt.matrixTransform(inv); // svg coords
+  const delta = -e.deltaY; // wheel up => positive zoom
+  const factor = Math.exp(delta * 0.0015);
+  const newZ = Math.min(2.5, Math.max(0.4, zoom * factor));
 
-      const vw0 = contentW / zoom;
-      const vh0 = contentH / zoom;
-      const vw1 = contentW / newZ;
-      const vh1 = contentH / newZ;
+  const svg = svgRef.current!;
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return;
+  const inv = ctm.inverse();
+  const p = pt.matrixTransform(inv); // svg coords at mouse
 
-      const nx = pan.x + (p.x - pan.x) - (p.x - pan.x) * (vw1 / vw0);
-      const ny = pan.y + (p.y - pan.y) - (p.y - pan.y) * (vh1 / vh0);
+  const vw0 = contentW / zoom;
+  const vh0 = contentH / zoom;
+  const vw1 = contentW / newZ;
+  const vh1 = contentH / newZ;
 
-      onZoomChange(+newZ.toFixed(2));
-      setPan({ x: nx, y: ny });
-    }
-  };
+  // keep point p stationary while zooming
+  const nx = pan.x + (p.x - pan.x) - (p.x - pan.x) * (vw1 / vw0);
+  const ny = pan.y + (p.y - pan.y) - (p.y - pan.y) * (vh1 / vh0);
+
+  onZoomChange(+newZ.toFixed(2));
+  setPan({ x: nx, y: ny });
+};
 
   return (
     <svg
