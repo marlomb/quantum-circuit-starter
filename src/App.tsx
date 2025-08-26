@@ -3,10 +3,12 @@ import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
 
 // Quantum Circuit Designer – Starter (pure React + SVG)
-// Upgrades:
-// - Select any gate by clicking it (highlighted)
-// - Delete selected gate via button or keyboard (Delete / Backspace)
-// - Strict TypeScript safe
+// Upgrades in this version:
+// - Select + Delete any gate (button or Delete/Backspace)
+// - **Drag & Drop** gates with snap-to-grid
+//    • 1-qubit gates: move across time (columns) and wires (rows)
+//    • CX gates: move across time and vertically while preserving the control→target row offset
+// - **Qubit labels** (q0, q1, ...) auto-update on add/delete qubits
 
 // ---------------- Quantum math utils ----------------
 const SQRT1_2 = Math.SQRT1_2; // 1/sqrt(2)
@@ -50,7 +52,6 @@ function apply1Q(
 }
 
 function applyX(st: Complex[], t: number) {
-  // X swaps |0> and |1> on target
   const N = st.length;
   const bit = 1 << t;
   for (let i = 0; i < N; i++) {
@@ -155,6 +156,7 @@ const THEMES = {
     gate: "#111827",
     text: "#111827",
     select: "#10b981",
+    label: "#4b5563",
   },
   dark: {
     bg: "#0b1118",
@@ -163,6 +165,7 @@ const THEMES = {
     gate: "#e5e7eb",
     text: "#e5e7eb",
     select: "#34d399",
+    label: "#9ca3af",
   },
 };
 
@@ -176,6 +179,17 @@ export default function App() {
   const [padding, setPadding] = useState(24);
   const [aspect, setAspect] = useState("auto"); // auto, 16:9, 4:3, 1:1
   const [selected, setSelected] = useState<{ t: number; id: string } | null>(null);
+  const [drag, setDrag] = useState<
+    | null
+    | {
+        id: string;
+        t: number; // original moment index
+        type: GateType;
+        targets: number[]; // original targets
+        dx: number; // mouse offset inside cell
+        dy: number;
+      }
+  >(null);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -214,7 +228,8 @@ export default function App() {
   };
 
   const setQubits = (n: number) => {
-    const nClamped = Math.max(1, Math.min(6, n));
+    const nClamped = Math.max(1, Math.min(12, n));
+    setCircuit((c) => ({ ...emptyCircuit(nClamped), moments: c.moments }));
     setCircuit(() => emptyCircuit(nClamped));
     setSelected(null);
   };
@@ -331,7 +346,7 @@ export default function App() {
               <input
                 type="number"
                 min={1}
-                max={6}
+                max={12}
                 value={circuit.nQubits}
                 onChange={(e) => setQubits(parseInt(e.target.value || "1"))}
                 style={{ width: 64, marginLeft: 6 }}
@@ -370,7 +385,7 @@ export default function App() {
           </div>
         </header>
 
-        <section style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16 }}>
           {/* Left: Controls */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
@@ -386,7 +401,7 @@ export default function App() {
                 <button onClick={removeLast}>Undo last</button>
               </div>
               <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                Tip: Click a gate to select it. Press <kbd>Delete</kbd>/<kbd>Backspace</kbd> or use the button below to remove it.
+                Tip: Drag gates to move them. CX keeps its vertical spacing.
               </p>
             </div>
 
@@ -427,6 +442,9 @@ export default function App() {
                 selected={selected}
                 onDeselect={() => setSelected(null)}
                 onSelect={(t, id) => setSelected({ t, id })}
+                drag={drag}
+                setDrag={setDrag}
+                setCircuit={setCircuit}
               />
             </div>
 
@@ -458,6 +476,9 @@ function CircuitSVG({
   selected,
   onDeselect,
   onSelect,
+  drag,
+  setDrag,
+  setCircuit,
 }: {
   circuit: Circuit;
   padding: number;
@@ -467,13 +488,17 @@ function CircuitSVG({
   selected: { t: number; id: string } | null;
   onDeselect: () => void;
   onSelect: (t: number, id: string) => void;
+  drag: any;
+  setDrag: React.Dispatch<React.SetStateAction<any>>;
+  setCircuit: React.Dispatch<React.SetStateAction<Circuit>>;
 }) {
   const T = THEMES[themeKey];
   const cellW = 72;
   const cellH = 56;
+  const labelW = 36; // space for qubit labels
   const wires = circuit.nQubits;
   const cols = Math.max(1, circuit.moments.length || 1);
-  const width = padding * 2 + cols * cellW;
+  const width = padding * 2 + labelW + cols * cellW;
   const height = padding * 2 + wires * cellH;
 
   const viewBox = useMemo(() => {
@@ -485,6 +510,86 @@ function CircuitSVG({
     return `0 0 ${vbW} ${vbH}`;
   }, [width, height, aspect]);
 
+  // Helpers to convert mouse to grid coords
+  const toLocal = (evt: React.MouseEvent<SVGSVGElement>) => {
+    const svg = svgRef.current!;
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM();
+    const inv = ctm ? ctm.inverse() : null;
+    const p = inv ? pt.matrixTransform(inv) : { x: 0, y: 0 } as any;
+    return { x: p.x - padding - labelW, y: p.y - padding };
+  };
+
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+  const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!drag) return;
+    const { x, y } = toLocal(e);
+    const t = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
+    const q = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
+
+    // Draw a temporary preview by updating drag state (used by GateSVG)
+    setDrag({ ...drag, preview: { t, q } });
+  };
+
+  const onMouseUp = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!drag) return;
+    const { x, y } = toLocal(e);
+    let tNew = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
+
+    // Allow dropping after last column -> create a new moment
+    if (tNew >= cols) {
+      setCircuit((c) => {
+        const ms = [...c.moments];
+        ms.push({ t: ms.length, gates: [] });
+        return { ...c, moments: ms };
+      });
+      tNew = cols; // snap to the new last index
+    }
+
+    // Vertical placement
+    const qNew = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
+
+    setCircuit((c) => {
+      const ms = c.moments.map((m) => ({ ...m, gates: [...m.gates] }));
+      // remove from original cell
+      const from = ms[drag.t];
+      const gIdx = from.gates.findIndex((gg) => gg.id === drag.id);
+      if (gIdx >= 0) from.gates.splice(gIdx, 1);
+      // destination moment (ensure exists)
+      while (ms.length <= tNew) ms.push({ t: ms.length, gates: [] });
+      const to = ms[tNew];
+
+      if (drag.type === "CX") {
+        // Preserve original vertical offset between control and target
+        const diff = drag.targets[1] - drag.targets[0];
+        const qCtrl = qNew;
+        let qTgt = qCtrl + diff;
+        qTgt = clamp(qTgt, 0, c.nQubits - 1);
+        // if clamped moved target out of bounds, adjust control to keep diff
+        if (qTgt !== qCtrl + diff) {
+          // shift both so target fits
+          const sign = Math.sign(diff) || 1;
+          let qCtrlAdj = clamp(qTgt - diff, 0, c.nQubits - 1);
+          // ensure within range
+          if (qCtrlAdj < 0 || qCtrlAdj > c.nQubits - 1) qCtrlAdj = qCtrl;
+          to.gates.push({ id: drag.id, type: "CX", targets: [qCtrlAdj, qCtrlAdj + diff] });
+        } else {
+          to.gates.push({ id: drag.id, type: "CX", targets: [qCtrl, qTgt] });
+        }
+      } else {
+        to.gates.push({ id: drag.id, type: drag.type as GateType, targets: [qNew] });
+      }
+
+      return { ...c, moments: ms };
+    });
+
+    setSelected({ t: tNew, id: drag.id });
+    setDrag(null);
+  };
+
   return (
     <svg
       ref={svgRef}
@@ -492,46 +597,63 @@ function CircuitSVG({
       width="100%"
       style={{ background: T.bg, borderRadius: 12 }}
       onClick={(e) => {
-        // clicking the empty canvas deselects
         if ((e.target as HTMLElement).tagName === "svg") onDeselect();
       }}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
     >
       <g transform={`translate(${padding}, ${padding})`}>
-        {/* grid */}
-        {[...Array(wires + 1)].map((_, r) => (
-          <line key={r} x1={0} y1={r * cellH} x2={cols * cellW} y2={r * cellH} stroke={T.grid} strokeWidth={1} />
-        ))}
-        {[...Array(cols + 1)].map((_, c) => (
-          <line key={c} x1={c * cellW} y1={0} x2={c * cellW} y2={wires * cellH} stroke={T.grid} strokeWidth={1} />
-        ))}
-        {/* wires */}
+        {/* qubit labels */}
         {[...Array(wires)].map((_, q) => (
-          <line
-            key={q}
-            x1={0}
-            y1={q * cellH + cellH / 2}
-            x2={cols * cellW}
-            y2={q * cellH + cellH / 2}
-            stroke={T.wire}
-            strokeWidth={2}
-          />
+          <text key={q} x={0} y={q * cellH + cellH / 2 + 5} textAnchor="start" fill={T.label} fontSize={12}>
+            {`q${q}`}
+          </text>
         ))}
-        {/* gates */}
-        {circuit.moments.map((m) => (
-          <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
-            {m.gates.map((g) => (
-              <GateSVG
-                key={g.id}
-                gate={g}
-                cellH={cellH}
-                cellW={cellW}
-                colors={T}
-                selected={!!selected && selected.id === g.id && selected.t === m.t}
-                onClick={() => onSelect(m.t, g.id)}
-              />
-            ))}
-          </g>
-        ))}
+
+        <g transform={`translate(${labelW},0)`}>
+          {/* grid */}
+          {[...Array(wires + 1)].map((_, r) => (
+            <line key={r} x1={0} y1={r * cellH} x2={cols * cellW} y2={r * cellH} stroke={T.grid} strokeWidth={1} />
+          ))}
+          {[...Array(cols + 1)].map((_, c) => (
+            <line key={c} x1={c * cellW} y1={0} x2={c * cellW} y2={wires * cellH} stroke={T.grid} strokeWidth={1} />
+          ))}
+          {/* wires */}
+          {[...Array(wires)].map((_, q) => (
+            <line
+              key={q}
+              x1={0}
+              y1={q * cellH + cellH / 2}
+              x2={cols * cellW}
+              y2={q * cellH + cellH / 2}
+              stroke={T.wire}
+              strokeWidth={2}
+            />
+          ))}
+
+          {/* gates */}
+          {circuit.moments.map((m) => (
+            <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
+              {m.gates.map((g) => (
+                <GateSVG
+                  key={g.id}
+                  gate={drag && drag.id === g.id ? { ...g, targets: drag.targets } : g}
+                  cellH={cellH}
+                  cellW={cellW}
+                  colors={T}
+                  selected={!!selected && selected.id === g.id && selected.t === m.t}
+                  onMouseDown={(evt, dx, dy) => {
+                    evt.stopPropagation();
+                    setSelected({ t: m.t, id: g.id });
+                    setDrag({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+                  }}
+                  isDragging={!!drag && drag.id === g.id}
+                  preview={drag && drag.id === g.id ? drag.preview : undefined}
+                />
+              ))}
+            </g>
+          ))}
+        </g>
       </g>
     </svg>
   );
@@ -543,46 +665,61 @@ function GateSVG({
   cellW,
   colors,
   selected,
-  onClick,
+  onMouseDown,
+  isDragging,
+  preview,
 }: {
   gate: Gate;
   cellH: number;
   cellW: number;
   colors: any;
   selected: boolean;
-  onClick: () => void;
+  onMouseDown: (evt: React.MouseEvent, dx: number, dy: number) => void;
+  isDragging: boolean;
+  preview?: { t: number; q: number };
 }) {
   const yCenter = (q: number) => q * cellH + cellH / 2;
   const xCenter = cellW / 2;
   const gateColor = colors.gate;
   const selColor = colors.select;
 
+  // dragging visuals
+  const dragStroke = selected ? selColor : gateColor;
+  const dragWidth = selected ? 3 : 2;
+
+  const handleMouseDown = (evt: React.MouseEvent, dx = 0, dy = 0) => onMouseDown(evt, dx, dy);
+
   if (gate.type === "CX") {
     const [cIdx, tIdx] = gate.targets;
     const x = xCenter;
-    const yC = yCenter(cIdx);
-    const yT = yCenter(tIdx);
+    const yC = yCenter(preview ? preview.q : cIdx);
+    const diff = tIdx - cIdx;
+    let yT = yCenter((preview ? preview.q : cIdx) + diff);
+
     return (
-      <g onClick={(e) => { e.stopPropagation(); onClick(); }} style={{ cursor: "pointer" }}>
-        <line x1={x} y1={yC} x2={x} y2={yT} stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
+      <g
+        onMouseDown={(e) => handleMouseDown(e, xCenter, (cellH / 2))}
+        style={{ cursor: "grab" }}
+      >
+        <line x1={x} y1={yC} x2={x} y2={yT} stroke={dragStroke} strokeWidth={dragWidth} />
         {/* control dot */}
-        <circle cx={x} cy={yC} r={6} fill={selected ? selColor : gateColor} />
+        <circle cx={x} cy={yC} r={6} fill={dragStroke} />
         {/* target plus */}
-        <circle cx={x} cy={yT} r={12} fill="none" stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
-        <line x1={x - 8} y1={yT} x2={x + 8} y2={yT} stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
-        <line x1={x} y1={yT - 8} x2={x} y2={yT + 8} stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
+        <circle cx={x} cy={yT} r={12} fill="none" stroke={dragStroke} strokeWidth={dragWidth} />
+        <line x1={x - 8} y1={yT} x2={x + 8} y2={yT} stroke={dragStroke} strokeWidth={dragWidth} />
+        <line x1={x} y1={yT - 8} x2={x} y2={yT + 8} stroke={dragStroke} strokeWidth={dragWidth} />
       </g>
     );
   }
 
-  const q = gate.targets[0];
+  const q = preview ? preview.q : gate.targets[0];
   const x = xCenter - 20;
   const y = q * cellH + cellH / 2 - 16;
   const w = 40;
   const h = 32;
   const label = GATE_LABEL[gate.type];
   return (
-    <g onClick={(e) => { e.stopPropagation(); onClick(); }} style={{ cursor: "pointer" }}>
+    <g onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)} style={{ cursor: "grab" }}>
       {selected && (
         <rect x={x - 4} y={y - 4} width={w + 8} height={h + 8} rx={10} ry={10} fill="none" stroke={selColor} strokeWidth={2} />
       )}
