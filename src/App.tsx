@@ -3,12 +3,12 @@ import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
 
 // Quantum Circuit Designer – Starter (pure React + SVG)
-// MVP features:
+// Strict TypeScript ready: removed unused params, relaxed refs, cleaned types
+// Features:
 // - Place gates (H, X, CX, Measure)
-// - Live simulation (statevector probs + shots)
+// - Live simulation (statevector → probabilities + shots)
 // - Export: SVG, PNG, JPG, PDF
-// - Basic image controls: padding, theme, aspect ratio
-// NOTE: This is a self-contained starter without external quantum libs.
+// - Image controls: theme, padding, aspect ratio
 
 // ---------------- Quantum math utils ----------------
 const SQRT1_2 = Math.SQRT1_2; // 1/sqrt(2)
@@ -16,7 +16,8 @@ const SQRT1_2 = Math.SQRT1_2; // 1/sqrt(2)
 type Complex = { re: number; im: number };
 const c = (re = 0, im = 0): Complex => ({ re, im });
 const add = (a: Complex, b: Complex) => c(a.re + b.re, a.im + b.im);
-const mul = (a: Complex, b: Complex) => c(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
+const mul = (a: Complex, b: Complex) =>
+  c(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
 const norm2 = (a: Complex) => a.re * a.re + a.im * a.im;
 
 function zeroState(nQubits: number): Complex[] {
@@ -26,8 +27,15 @@ function zeroState(nQubits: number): Complex[] {
   return st;
 }
 
-// Apply a 1-qubit gate given a 2x2 complex matrix to target qubit t
-function apply1Q(st: Complex[], nQ: number, t: number, m00: Complex, m01: Complex, m10: Complex, m11: Complex) {
+// Apply a 1-qubit gate (2x2) to target qubit t
+function apply1Q(
+  st: Complex[],
+  t: number,
+  m00: Complex,
+  m01: Complex,
+  m10: Complex,
+  m11: Complex
+) {
   const N = st.length;
   const bit = 1 << t;
   for (let i = 0; i < N; i++) {
@@ -43,7 +51,7 @@ function apply1Q(st: Complex[], nQ: number, t: number, m00: Complex, m01: Comple
   }
 }
 
-function applyX(st: Complex[], nQ: number, t: number) {
+function applyX(st: Complex[], t: number) {
   // X swaps |0> and |1> on target
   const N = st.length;
   const bit = 1 << t;
@@ -57,12 +65,12 @@ function applyX(st: Complex[], nQ: number, t: number) {
   }
 }
 
-function applyH(st: Complex[], nQ: number, t: number) {
+function applyH(st: Complex[], t: number) {
   const s = SQRT1_2;
-  apply1Q(st, nQ, t, c(s, 0), c(s, 0), c(s, 0), c(-s, 0));
+  apply1Q(st, t, c(s, 0), c(s, 0), c(s, 0), c(-s, 0));
 }
 
-function applyCX(st: Complex[], nQ: number, control: number, target: number) {
+function applyCX(st: Complex[], control: number, target: number) {
   const N = st.length;
   const cbit = 1 << control;
   const tbit = 1 << target;
@@ -99,13 +107,12 @@ function sampleCounts(probs: number[], shots: number): Record<string, number> {
 }
 
 // ---------------- Circuit model ----------------
-
 type GateType = "H" | "X" | "CX" | "MEASURE";
 
 type Gate = {
   id: string;
   type: GateType;
-  targets: number[]; // e.g., [q] or [control, target] for CX
+  targets: number[]; // [q] or [control, target] for CX
 };
 
 type Moment = { t: number; gates: Gate[] };
@@ -123,12 +130,10 @@ function simulateCircuit(circ: Circuit) {
   let st = zeroState(circ.nQubits);
   for (const m of circ.moments) {
     for (const g of m.gates) {
-      if (g.type === "H") applyH(st, circ.nQubits, g.targets[0]);
-      else if (g.type === "X") applyX(st, circ.nQubits, g.targets[0]);
-      else if (g.type === "CX") applyCX(st, circ.nQubits, g.targets[0], g.targets[1]);
-      else if (g.type === "MEASURE") {
-        // ideal preview: we read probs at the end
-      }
+      if (g.type === "H") applyH(st, g.targets[0]);
+      else if (g.type === "X") applyX(st, g.targets[0]);
+      else if (g.type === "CX") applyCX(st, g.targets[0], g.targets[1]);
+      // MEASURE is a no-op here; we visualize probs at the end
     }
   }
   const probs = probsFromState(st);
@@ -136,7 +141,6 @@ function simulateCircuit(circ: Circuit) {
 }
 
 // ---------------- UI helpers ----------------
-
 function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
@@ -164,7 +168,6 @@ const THEMES = {
 type ThemeKey = keyof typeof THEMES;
 
 // ---------------- Main App ----------------
-
 export default function App() {
   const [circuit, setCircuit] = useState<Circuit>(() => emptyCircuit(2));
   const [shots, setShots] = useState(512);
@@ -202,7 +205,8 @@ export default function App() {
       const ms = [...c.moments];
       if (ms.length === 0) return c;
       const last = ms[ms.length - 1];
-      if (last.gates.length > 0) last.gates.pop(); else ms.pop();
+      if (last.gates.length > 0) last.gates.pop();
+      else ms.pop();
       return { ...c, moments: ms };
     });
   };
@@ -217,23 +221,6 @@ export default function App() {
     const counts = sampleCounts(probs, shots);
     return { probs, counts };
   }, [circuit, shots]);
-
-  // -------------- Rendering params --------------
-  const cellW = 72;
-  const cellH = 56;
-  const wires = circuit.nQubits;
-  const cols = Math.max(1, circuit.moments.length || 1);
-  const width = padding * 2 + cols * cellW;
-  const height = padding * 2 + wires * cellH;
-
-  const viewBox = useMemo(() => {
-    if (aspect === "auto") return `0 0 ${width} ${height}`;
-    const [aw, ah] = aspect.split(":").map(Number);
-    const targetH = (height * aw) / ah;
-    const vbH = Math.max(height, targetH);
-    const vbW = (vbH * aw) / ah;
-    return `0 0 ${vbW} ${vbH}`;
-  }, [width, height, aspect]);
 
   // -------------- Export helpers --------------
   const serializeSVG = () => {
@@ -257,10 +244,11 @@ export default function App() {
     const themeBg = THEMES[theme].bg;
     const can = document.createElement("canvas");
     const svg = svgRef.current!;
-    const w = svg.viewBox.baseVal.width || svg.clientWidth;
-    const h = svg.viewBox.baseVal.height || svg.clientHeight;
-    can.width = Math.ceil(w * scale);
-    can.height = Math.ceil(h * scale);
+    const vb = svg.viewBox.baseVal;
+    const w = vb && (vb.width || vb.x || vb.y) ? vb.width : svg.clientWidth;
+    const h = vb && (vb.height || vb.x || vb.y) ? vb.height : svg.clientHeight;
+    can.width = Math.max(1, Math.ceil(w * scale));
+    can.height = Math.max(1, Math.ceil(h * scale));
     const ctx = can.getContext("2d");
     if (!ctx) throw new Error("Canvas not supported");
     await new Promise<void>((resolve) => {
@@ -288,38 +276,60 @@ export default function App() {
   const downloadPDF = async () => {
     const can = await svgToCanvas(3);
     const imgData = can.toDataURL("image/png");
-    const pdf = new jsPDF({ orientation: can.width > can.height ? "l" : "p", unit: "pt", format: [can.width, can.height] });
+    const pdf = new jsPDF({
+      orientation: can.width > can.height ? "l" : "p",
+      unit: "pt",
+      format: [can.width, can.height],
+    });
     pdf.addImage(imgData, "PNG", 0, 0, can.width, can.height);
     pdf.save("circuit.pdf");
   };
 
-  // -------------- UI --------------
   const T = THEMES[theme];
 
   return (
-    <div className="min-h-screen" style={{ background: T.bg, color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}>
+    <div
+      className="min-h-screen"
+      style={{ background: T.bg, color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}
+    >
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: 16 }}>
-        <header style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <header
+          style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}
+        >
           <h1 style={{ fontSize: 20, fontWeight: 700 }}>Quantum Circuit Designer – Starter</h1>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-              Theme: {theme}
-            </button>
+            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>Theme: {theme}</button>
             <label>
               Qubits
-              <input type="number" min={1} max={6} value={circuit.nQubits}
-                     onChange={(e) => setQubits(parseInt(e.target.value || "1"))}
-                     style={{ width: 64, marginLeft: 6 }} />
+              <input
+                type="number"
+                min={1}
+                max={6}
+                value={circuit.nQubits}
+                onChange={(e) => setQubits(parseInt(e.target.value || "1"))}
+                style={{ width: 64, marginLeft: 6 }}
+              />
             </label>
             <label>
               Shots
-              <input type="number" min={1} max={100000} value={shots}
-                     onChange={(e) => setShots(parseInt(e.target.value || "512"))}
-                     style={{ width: 92, marginLeft: 6 }} />
+              <input
+                type="number"
+                min={1}
+                max={100000}
+                value={shots}
+                onChange={(e) => setShots(parseInt(e.target.value || "512"))}
+                style={{ width: 92, marginLeft: 6 }}
+              />
             </label>
             <label>
               Padding
-              <input type="range" min={0} max={64} value={padding} onChange={(e) => setPadding(parseInt(e.target.value))} />
+              <input
+                type="range"
+                min={0}
+                max={64}
+                value={padding}
+                onChange={(e) => setPadding(parseInt(e.target.value))}
+              />
             </label>
             <label>
               Aspect
@@ -348,7 +358,9 @@ export default function App() {
                 <button onClick={addMoment}>Add time step</button>
                 <button onClick={removeLast}>Undo last</button>
               </div>
-              <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>Tip: Gate buttons place onto a new time step. Multi-qubit gates use qubits 0 and 1 by default in this starter.</p>
+              <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+                Tip: Gate buttons place onto a new time step. Multi-qubit gates use qubits 0 and 1 by default in this starter.
+              </p>
             </div>
 
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
@@ -371,7 +383,7 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
               <h3 style={{ marginTop: 0 }}>Circuit</h3>
-              <CircuitSVG circuit={circuit} padding={padding} themeKey={theme} svgRef={svgRef} />
+              <CircuitSVG circuit={circuit} padding={padding} themeKey={theme} aspect={aspect} svgRef={svgRef} />
             </div>
 
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
@@ -393,7 +405,19 @@ function PaletteButton({ label, onClick }: { label: string; onClick: () => void 
   );
 }
 
-function CircuitSVG({ circuit, padding, themeKey, svgRef }: { circuit: Circuit; padding: number; themeKey: ThemeKey; svgRef: React.RefObject<SVGSVGElement> }) {
+function CircuitSVG({
+  circuit,
+  padding,
+  themeKey,
+  aspect,
+  svgRef,
+}: {
+  circuit: Circuit;
+  padding: number;
+  themeKey: ThemeKey;
+  aspect: string;
+  svgRef: React.RefObject<SVGSVGElement | null>;
+}) {
   const T = THEMES[themeKey];
   const cellW = 72;
   const cellH = 56;
@@ -402,8 +426,17 @@ function CircuitSVG({ circuit, padding, themeKey, svgRef }: { circuit: Circuit; 
   const width = padding * 2 + cols * cellW;
   const height = padding * 2 + wires * cellH;
 
+  const viewBox = useMemo(() => {
+    if (aspect === "auto") return `0 0 ${width} ${height}`;
+    const [aw, ah] = aspect.split(":").map(Number);
+    const targetH = (height * aw) / ah;
+    const vbH = Math.max(height, targetH);
+    const vbW = (vbH * aw) / ah;
+    return `0 0 ${vbW} ${vbH}`;
+  }, [width, height, aspect]);
+
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" style={{ background: T.bg, borderRadius: 12 }}>
+    <svg ref={svgRef} viewBox={viewBox} width="100%" style={{ background: T.bg, borderRadius: 12 }}>
       <g transform={`translate(${padding}, ${padding})`}>
         {/* grid */}
         {[...Array(wires + 1)].map((_, r) => (
@@ -414,7 +447,15 @@ function CircuitSVG({ circuit, padding, themeKey, svgRef }: { circuit: Circuit; 
         ))}
         {/* wires */}
         {[...Array(wires)].map((_, q) => (
-          <line key={q} x1={0} y1={q * cellH + cellH / 2} x2={cols * cellW} y2={q * cellH + cellH / 2} stroke={T.wire} strokeWidth={2} />
+          <line
+            key={q}
+            x1={0}
+            y1={q * cellH + cellH / 2}
+            x2={cols * cellW}
+            y2={q * cellH + cellH / 2}
+            stroke={T.wire}
+            strokeWidth={2}
+          />
         ))}
         {/* gates */}
         {circuit.moments.map((m) => (
@@ -435,10 +476,10 @@ function GateSVG({ gate, cellH, cellW, colors }: { gate: Gate; cellH: number; ce
   const gateColor = colors.gate;
 
   if (gate.type === "CX") {
-    const [c, t] = gate.targets;
+    const [cIdx, tIdx] = gate.targets;
     const x = xCenter;
-    const yC = yCenter(c);
-    const yT = yCenter(t);
+    const yC = yCenter(cIdx);
+    const yT = yCenter(tIdx);
     return (
       <g>
         <line x1={x} y1={yC} x2={x} y2={yT} stroke={gateColor} strokeWidth={2} />
@@ -496,7 +537,15 @@ function BarChart({ probs }: { probs: number[] }) {
   const max = Math.max(1e-9, ...probs);
   const labels = probs.map((_, i) => i.toString(2).padStart(Math.log2(probs.length), "0"));
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${probs.length}, 1fr)`, gap: 6, alignItems: "end", height: 180 }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${probs.length}, 1fr)`,
+        gap: 6,
+        alignItems: "end",
+        height: 180,
+      }}
+    >
       {probs.map((p, i) => (
         <div key={i} title={`${labels[i]}: ${(p * 100).toFixed(2)}%`}>
           <div style={{ height: `${(p / max) * 160}px`, background: "#60a5fa", borderRadius: 6 }} />
