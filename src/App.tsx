@@ -145,24 +145,24 @@ const GATE_LABEL: Record<GateType, string> = {
 
 const THEMES = {
   light: {
-    bg: "#ffffff",
-    grid: "#e5e7eb",
-    wire: "#9ca3af",
-    gate: "#111827",
-    text: "#111827",
-    select: "#10b981",
-    label: "#4b5563",
+    bg: "rgba(255,255,255,0.02)",   // almost transparent to show neon bg
+    grid: "rgba(255,255,255,0.10)", // soft grid
+    wire: "rgba(255,255,255,0.35)", // softer wires
+    gate: "#e6eef9",                // readable stroke/fill
+    text: "#e6eef9",
+    select: "#53d7f0",              // matches --cyan
+    label: "#a4b2cc",
   },
   dark: {
-    bg: "#0b1118",
-    grid: "#1f2937",
-    wire: "#6b7280",
-    gate: "#e5e7eb",
-    text: "#e5e7eb",
-    select: "#34d399",
-    label: "#9ca3af",
+    bg: "rgba(255,255,255,0.02)",
+    grid: "rgba(255,255,255,0.10)",
+    wire: "rgba(255,255,255,0.35)",
+    gate: "#e6eef9",
+    text: "#e6eef9",
+    select: "#53d7f0",
+    label: "#a4b2cc",
   },
-};
+} as const;
 type ThemeKey = keyof typeof THEMES;
 
 // ================= Main App =================
