@@ -2,16 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
 
-// Quantum Circuit Designer – Starter (pure React + SVG)
-// Upgrades in this version:
-// - Select + Delete any gate (button or Delete/Backspace)
-// - **Drag & Drop** gates with snap-to-grid
-//    • 1-qubit gates: move across time (columns) and wires (rows)
-//    • CX gates: move across time and vertically while preserving the control→target row offset
-// - **Qubit labels** (q0, q1, ...) auto-update on add/delete qubits
-
-// ---------------- Quantum math utils ----------------
-const SQRT1_2 = Math.SQRT1_2; // 1/sqrt(2)
+// ================= Quantum math utils =================
+const SQRT1_2 = Math.SQRT1_2;
 
 type Complex = { re: number; im: number };
 const c = (re = 0, im = 0): Complex => ({ re, im });
@@ -27,7 +19,6 @@ function zeroState(nQubits: number): Complex[] {
   return st;
 }
 
-// Apply a 1-qubit gate (2x2) to target qubit t
 function apply1Q(
   st: Complex[],
   t: number,
@@ -40,7 +31,7 @@ function apply1Q(
   const bit = 1 << t;
   for (let i = 0; i < N; i++) {
     if ((i & bit) === 0) {
-      const j = i | bit; // pair index with bit set
+      const j = i | bit;
       const a0 = st[i];
       const a1 = st[j];
       const r0 = add(mul(m00, a0), mul(m01, a1));
@@ -75,7 +66,7 @@ function applyCX(st: Complex[], control: number, target: number) {
   const tbit = 1 << target;
   for (let i = 0; i < N; i++) {
     if ((i & cbit) !== 0 && (i & tbit) === 0) {
-      const j = i | tbit; // flip target when control is 1
+      const j = i | tbit;
       const tmp = st[i];
       st[i] = st[j];
       st[j] = tmp;
@@ -105,8 +96,7 @@ function sampleCounts(probs: number[], shots: number): Record<string, number> {
   return counts;
 }
 
-// ---------------- Circuit model ----------------
-
+// ================= Circuit model =================
 type GateType = "H" | "X" | "CX" | "MEASURE";
 
 type Gate = {
@@ -133,21 +123,25 @@ function simulateCircuit(circ: Circuit) {
       if (g.type === "H") applyH(st, g.targets[0]);
       else if (g.type === "X") applyX(st, g.targets[0]);
       else if (g.type === "CX") applyCX(st, g.targets[0], g.targets[1]);
-      // MEASURE is a no-op here; we visualize probs at the end
+      // MEASURE: no collapse here; we display probabilities
     }
   }
   const probs = probsFromState(st);
   return { probs };
 }
 
-// ---------------- UI helpers ----------------
+// ================= UI & helpers =================
 function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-const GATE_LABEL: Record<GateType, string> = { H: "H", X: "X", CX: "●⊕", MEASURE: "M" };
+const GATE_LABEL: Record<GateType, string> = {
+  H: "H",
+  X: "X",
+  CX: "●⊕",
+  MEASURE: "M",
+};
 
-// Colors/themes
 const THEMES = {
   light: {
     bg: "#ffffff",
@@ -168,10 +162,9 @@ const THEMES = {
     label: "#9ca3af",
   },
 };
-
 type ThemeKey = keyof typeof THEMES;
 
-// ---------------- Main App ----------------
+// ================= Main App =================
 export default function App() {
   const [circuit, setCircuit] = useState<Circuit>(() => emptyCircuit(2));
   const [shots, setShots] = useState(512);
@@ -179,15 +172,18 @@ export default function App() {
   const [padding, setPadding] = useState(24);
   const [aspect, setAspect] = useState("auto"); // auto, 16:9, 4:3, 1:1
   const [selected, setSelected] = useState<{ t: number; id: string } | null>(null);
+
+  // drag state (active drag only)
   const [drag, setDrag] = useState<
     | null
     | {
         id: string;
-        t: number; // original moment index
+        t: number;
         type: GateType;
-        targets: number[]; // original targets
-        dx: number; // mouse offset inside cell
-        dy: number;
+        targets: number[];
+        dx: number; // local offset inside cell (xCenter)
+        dy: number; // local offset inside cell (yCenter)
+        transformPx?: { tx: number; ty: number }; // live pixel transform for smooth tracking
       }
   >(null);
 
@@ -229,7 +225,6 @@ export default function App() {
 
   const setQubits = (n: number) => {
     const nClamped = Math.max(1, Math.min(12, n));
-    setCircuit((c) => ({ ...emptyCircuit(nClamped), moments: c.moments }));
     setCircuit(() => emptyCircuit(nClamped));
     setSelected(null);
   };
@@ -245,7 +240,7 @@ export default function App() {
     setSelected(null);
   };
 
-  // keyboard: Delete / Backspace removes selected gate
+  // keyboard delete
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!selected) return;
@@ -264,7 +259,7 @@ export default function App() {
     return { probs, counts };
   }, [circuit, shots]);
 
-  // -------------- Export helpers --------------
+  // -------- Export helpers --------
   const serializeSVG = () => {
     const svg = svgRef.current;
     if (!svg) return "";
@@ -273,22 +268,15 @@ export default function App() {
     const svgData = new XMLSerializer().serializeToString(cloned);
     return svgData;
   };
-
-  const downloadSVG = () => {
-    const data = serializeSVG();
-    const blob = new Blob([data], { type: "image/svg+xml;charset=utf-8" });
-    saveAs(blob, "circuit.svg");
-  };
-
-  const svgToCanvas = async (scale = 2) => {
+  const svgToCanvas = async (scale = 3) => {
     const data = serializeSVG();
     const img = new Image();
     const themeBg = THEMES[theme].bg;
     const can = document.createElement("canvas");
     const svg = svgRef.current!;
     const vb = svg.viewBox.baseVal;
-    const w = vb && (vb.width || vb.x || vb.y) ? vb.width : svg.clientWidth;
-    const h = vb && (vb.height || vb.x || vb.y) ? vb.height : svg.clientHeight;
+    const w = vb && vb.width ? vb.width : svg.clientWidth;
+    const h = vb && vb.height ? vb.height : svg.clientHeight;
     can.width = Math.max(1, Math.ceil(w * scale));
     can.height = Math.max(1, Math.ceil(h * scale));
     const ctx = can.getContext("2d");
@@ -304,17 +292,19 @@ export default function App() {
     });
     return can;
   };
-
+  const downloadSVG = () => {
+    const data = serializeSVG();
+    const blob = new Blob([data], { type: "image/svg+xml;charset=utf-8" });
+    saveAs(blob, "circuit.svg");
+  };
   const downloadPNG = async () => {
     const can = await svgToCanvas(3);
     can.toBlob((blob) => blob && saveAs(blob, "circuit.png"), "image/png");
   };
-
   const downloadJPG = async () => {
     const can = await svgToCanvas(3);
     can.toBlob((blob) => blob && saveAs(blob, "circuit.jpg"), "image/jpeg", 0.95);
   };
-
   const downloadPDF = async () => {
     const can = await svgToCanvas(3);
     const imgData = can.toDataURL("image/png");
@@ -332,15 +322,27 @@ export default function App() {
   return (
     <div
       className="min-h-screen"
-      style={{ background: T.bg, color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}
+      style={{
+        background: T.bg,
+        color: T.text,
+        fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
+      }}
     >
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: 16 }}>
         <header
-          style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}
+          style={{
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 12,
+          }}
         >
           <h1 style={{ fontSize: 20, fontWeight: 700 }}>Quantum Circuit Designer – Starter</h1>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>Theme: {theme}</button>
+            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+              Theme: {theme}
+            </button>
             <label>
               Qubits
               <input
@@ -393,15 +395,21 @@ export default function App() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
                 <PaletteButton label="H" onClick={() => addGate("H", 0, circuit.moments.length)} />
                 <PaletteButton label="X" onClick={() => addGate("X", 0, circuit.moments.length)} />
-                <PaletteButton label="CX" onClick={() => addGate("CX", 0, circuit.moments.length, 1)} />
-                <PaletteButton label="M" onClick={() => addGate("MEASURE", 0, circuit.moments.length)} />
+                <PaletteButton
+                  label="CX"
+                  onClick={() => addGate("CX", 0, circuit.moments.length, 1)}
+                />
+                <PaletteButton
+                  label="M"
+                  onClick={() => addGate("MEASURE", 0, circuit.moments.length)}
+                />
               </div>
               <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
                 <button onClick={addMoment}>Add time step</button>
                 <button onClick={removeLast}>Undo last</button>
               </div>
               <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                Tip: Drag gates to move them. CX keeps its vertical spacing.
+                Tip: Press & hold a gate, then drag. It follows your pointer smoothly and snaps on drop.
               </p>
             </div>
 
@@ -410,7 +418,9 @@ export default function App() {
               <button onClick={deleteSelectedGate} disabled={!selected}>
                 Delete selected gate
               </button>
-              {!selected && <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>No gate selected</p>}
+              {!selected && (
+                <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>No gate selected</p>
+              )}
             </div>
 
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
@@ -445,7 +455,6 @@ export default function App() {
                 drag={drag}
                 setDrag={setDrag}
                 setCircuit={setCircuit}
-                
               />
             </div>
 
@@ -468,6 +477,7 @@ function PaletteButton({ label, onClick }: { label: string; onClick: () => void 
   );
 }
 
+// ================= CircuitSVG (press-and-hold + smooth drag) =================
 function CircuitSVG({
   circuit,
   padding,
@@ -496,7 +506,7 @@ function CircuitSVG({
     targets: number[];
     dx: number;
     dy: number;
-    preview?: { t: number; q: number };
+    transformPx?: { tx: number; ty: number };
   };
   setDrag: React.Dispatch<React.SetStateAction<any>>;
   setCircuit: React.Dispatch<React.SetStateAction<Circuit>>;
@@ -519,14 +529,29 @@ function CircuitSVG({
     return `0 0 ${vbW} ${vbH}`;
   }, [width, height, aspect]);
 
-  // --- PRESS & HOLD (already in your version) ---
+  // --- Press & Hold to start drag
   const HOLD_MS = 200;
   const holdTimerRef = useRef<number | null>(null);
-  const pendingRef = useRef<null | {
-    id: string; t: number; type: GateType; targets: number[]; dx: number; dy: number;
-  }>(null);
+  const pendingRef = useRef<
+    | null
+    | {
+        id: string;
+        t: number;
+        type: GateType;
+        targets: number[];
+        dx: number;
+        dy: number;
+      }
+  >(null);
 
-  const startHold = (data: { id: string; t: number; type: GateType; targets: number[]; dx: number; dy: number }) => {
+  const startHold = (data: {
+    id: string;
+    t: number;
+    type: GateType;
+    targets: number[];
+    dx: number;
+    dy: number;
+  }) => {
     pendingRef.current = data;
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     holdTimerRef.current = window.setTimeout(() => {
@@ -539,11 +564,12 @@ function CircuitSVG({
     pendingRef.current = null;
   };
 
-  // --- coords helpers ---
+  // --- coords helpers
   const toLocalFromXY = (clientX: number, clientY: number) => {
     const svg = svgRef.current!;
     const pt = svg.createSVGPoint();
-    pt.x = clientX; pt.y = clientY;
+    pt.x = clientX;
+    pt.y = clientY;
     const ctm = svg.getScreenCTM();
     const inv = ctm ? ctm.inverse() : null;
     const p = inv ? pt.matrixTransform(inv) : ({ x: 0, y: 0 } as any);
@@ -551,46 +577,50 @@ function CircuitSVG({
   };
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-  // --- rAF throttle for preview (SMOOTHNESS #1) ---
+  // --- rAF for smooth pixel transform during drag
   const rafId = useRef<number | null>(null);
-  const pendingPreview = useRef<{ t: number; q: number } | null>(null);
-
-  const flushPreview = () => {
-    if (!pendingPreview.current) { rafId.current = null; return; }
-    // use functional set to avoid stale 'drag'
-    setDrag((d: typeof drag) => (d ? { ...d, preview: pendingPreview.current! } : d));
-    pendingPreview.current = null;
+  const pendingPx = useRef<{ tx: number; ty: number } | null>(null);
+  const flushPx = () => {
+    if (!pendingPx.current) {
+      rafId.current = null;
+      return;
+    }
+    const px = pendingPx.current;
+    setDrag((d: typeof drag) => (d ? { ...d, transformPx: px } : d));
+    pendingPx.current = null;
     rafId.current = null;
   };
-
-  const schedulePreview = (t: number, q: number) => {
-    pendingPreview.current = { t, q };
-    if (rafId.current == null) rafId.current = requestAnimationFrame(flushPreview);
+  const schedulePx = (tx: number, ty: number) => {
+    pendingPx.current = { tx, ty };
+    if (rafId.current == null) rafId.current = requestAnimationFrame(flushPx);
   };
+  useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
-  // --- mouse move / touch move (write to pending + rAF) ---
+  // --- pointer move handlers (continuous tracking)
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!drag) return;
     const { x, y } = toLocalFromXY(e.clientX, e.clientY);
-    const t = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
-    const q = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
-    schedulePreview(t, q);
+    const baseX = drag.t * cellW + drag.dx;
+    const baseQ = drag.targets[0]; // for CX, this is control row
+    const baseY = baseQ * cellH + drag.dy;
+    schedulePx(x - baseX, y - baseY);
   };
 
   const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
     if (!drag) return;
-    const t0 = e.touches[0]; if (!t0) return;
+    const t0 = e.touches[0];
+    if (!t0) return;
     const { x, y } = toLocalFromXY(t0.clientX, t0.clientY);
-    const t = clamp(Math.round((x - drag.dx) / cellW), 0, Math.max(0, cols - 1));
-    const q = clamp(Math.round((y - drag.dy) / cellH), 0, wires - 1);
-    schedulePreview(t, q);
+    const baseX = drag.t * cellW + drag.dx;
+    const baseQ = drag.targets[0];
+    const baseY = baseQ * cellH + drag.dy;
+    schedulePx(x - baseX, y - baseY);
     e.preventDefault();
   };
 
-  useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
-
-  // --- drop logic (unchanged functional core) ---
+  // --- drop logic (snap to grid on release)
   const dropAt = (x: number, y: number) => {
+    // compute snapped column/row from pointer at release
     let tNew = clamp(Math.round((x - drag!.dx) / cellW), 0, Math.max(0, cols - 1));
     if (tNew >= cols) {
       setCircuit((c) => {
@@ -600,13 +630,14 @@ function CircuitSVG({
       });
       tNew = cols;
     }
-    const qNew = clamp(Math.round((y - drag!.dy) / cellH), 0, wires - 1);
+    const qNew = clamp(Math.round((y - drag!.dy) / cellH), 0, circuit.nQubits - 1);
 
     setCircuit((c) => {
       const ms = c.moments.map((m) => ({ ...m, gates: [...m.gates] }));
       const from = ms[drag!.t];
       const gIdx = from.gates.findIndex((gg) => gg.id === drag!.id);
       if (gIdx >= 0) from.gates.splice(gIdx, 1);
+
       while (ms.length <= tNew) ms.push({ t: ms.length, gates: [] });
       const to = ms[tNew];
 
@@ -665,7 +696,7 @@ function CircuitSVG({
       style={{ background: T.bg, borderRadius: 12, touchAction: "none" }}
       shapeRendering="geometricPrecision"
       onClick={(e) => {
-        if ((e.target as HTMLElement).tagName === "svg") {
+        if ((e.target as Element).tagName === "svg") {
           cancelHold();
           onDeselect();
         }
@@ -677,7 +708,7 @@ function CircuitSVG({
     >
       <g transform={`translate(${padding}, ${padding})`}>
         {/* qubit labels */}
-        {[...Array(wires)].map((_, q) => (
+        {Array.from({ length: wires }).map((_, q) => (
           <text key={q} x={0} y={q * cellH + cellH / 2 + 5} textAnchor="start" fill={T.label} fontSize={12}>
             {`q${q}`}
           </text>
@@ -685,14 +716,32 @@ function CircuitSVG({
 
         <g transform={`translate(${labelW},0)`}>
           {/* grid */}
-          {[...Array(wires + 1)].map((_, r) => (
-            <line key={r} x1={0} y1={r * cellH} x2={cols * cellW} y2={r * cellH} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
+          {Array.from({ length: wires + 1 }).map((_, r) => (
+            <line
+              key={r}
+              x1={0}
+              y1={r * cellH}
+              x2={cols * cellW}
+              y2={r * cellH}
+              stroke={T.grid}
+              strokeWidth={1}
+              pointerEvents="none"
+            />
           ))}
-          {[...Array(cols + 1)].map((_, c) => (
-            <line key={c} x1={c * cellW} y1={0} x2={c * cellW} y2={wires * cellH} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
+          {Array.from({ length: cols + 1 }).map((_, c) => (
+            <line
+              key={c}
+              x1={c * cellW}
+              y1={0}
+              x2={c * cellW}
+              y2={wires * cellH}
+              stroke={T.grid}
+              strokeWidth={1}
+              pointerEvents="none"
+            />
           ))}
           {/* wires */}
-          {[...Array(wires)].map((_, q) => (
+          {Array.from({ length: wires }).map((_, q) => (
             <line
               key={q}
               x1={0}
@@ -711,7 +760,7 @@ function CircuitSVG({
               {m.gates.map((g) => (
                 <GateSVG
                   key={g.id}
-                  t={m.t}                                    // <-- pass moment index
+                  t={m.t}
                   gate={g}
                   cellH={cellH}
                   cellW={cellW}
@@ -726,7 +775,7 @@ function CircuitSVG({
                     onSelect(m.t, g.id);
                     startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
                   }}
-                  preview={drag && drag.id === g.id ? drag.preview : undefined}
+                  transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
                 />
               ))}
             </g>
@@ -737,8 +786,9 @@ function CircuitSVG({
   );
 }
 
+// ================= GateSVG (memoized, transform-based preview) =================
 const GateSVG = React.memo(function GateSVG({
-  t,                 // moment (column) index of this gate
+  t,
   gate,
   cellH,
   cellW,
@@ -746,7 +796,7 @@ const GateSVG = React.memo(function GateSVG({
   selected,
   onMouseDown,
   onTouchStart,
-  preview,
+  transformPx,
 }: {
   t: number;
   gate: Gate;
@@ -756,29 +806,16 @@ const GateSVG = React.memo(function GateSVG({
   selected: boolean;
   onMouseDown: (evt: React.MouseEvent, dx: number, dy: number) => void;
   onTouchStart?: (touch: Touch, dx: number, dy: number) => void;
-  preview?: { t: number; q: number };
+  transformPx?: { tx: number; ty: number };
 }) {
   const yCenter = (q: number) => q * cellH + cellH / 2;
   const xCenter = cellW / 2;
   const gateColor = colors.gate;
   const selColor = colors.select;
 
-  // compute preview transform (SMOOTHNESS #3: transforms)
-  // translate X by (preview.t - t) * cellW
-  // translate Y by:
-  //   - 1q: (preview.q - q0) * cellH
-  //   - CX: (preview.q - ctrlQ) * cellH (control moves; target keeps diff)
-  let tx = 0, ty = 0;
-  if (preview) {
-    tx = (preview.t - t) * cellW;
-    if (gate.type === "CX") {
-      const ctrl = gate.targets[0];
-      ty = (preview.q - ctrl) * cellH;
-    } else {
-      const q0 = gate.targets[0];
-      ty = (preview.q - q0) * cellH;
-    }
-  }
+  // Continuous transform while dragging (falls back to 0,0 when idle)
+  const tx = transformPx ? transformPx.tx : 0;
+  const ty = transformPx ? transformPx.ty : 0;
 
   const dragStroke = selected ? selColor : gateColor;
   const dragWidth = selected ? 3 : 2;
@@ -793,10 +830,9 @@ const GateSVG = React.memo(function GateSVG({
   if (gate.type === "CX") {
     const [cIdx, tIdx] = gate.targets;
     const x = xCenter;
-    const baseQ = cIdx;
-    const yC = yCenter(baseQ);
+    const yC = yCenter(cIdx);
     const diff = tIdx - cIdx;
-    const yT = yCenter(baseQ + diff);
+    const yT = yCenter(cIdx + diff);
 
     return (
       <g
@@ -805,7 +841,7 @@ const GateSVG = React.memo(function GateSVG({
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
         onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
       >
-        {/* invisible fat hit area for easy grabbing */}
+        {/* big invisible hit area for easier grabbing */}
         <line x1={x} y1={yC} x2={x} y2={yT} stroke="transparent" strokeWidth={18} pointerEvents="stroke" />
         <line x1={x} y1={yC} x2={x} y2={yT} stroke={dragStroke} strokeWidth={dragWidth} />
         <circle cx={x} cy={yC} r={6} fill={dragStroke} />
@@ -830,8 +866,17 @@ const GateSVG = React.memo(function GateSVG({
       onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
       onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
     >
-      {/* invisible hit area to grab easily */}
-      <rect x={x - 6} y={y - 6} width={w + 12} height={h + 12} fill="transparent" stroke="transparent" strokeWidth={12} pointerEvents="all" />
+      {/* invisible hit area to make grabbing easier */}
+      <rect
+        x={x - 6}
+        y={y - 6}
+        width={w + 12}
+        height={h + 12}
+        fill="transparent"
+        stroke="transparent"
+        strokeWidth={12}
+        pointerEvents="all"
+      />
       {selected && (
         <rect x={x - 4} y={y - 4} width={w + 8} height={h + 8} rx={10} ry={10} fill="none" stroke={selColor} strokeWidth={2} />
       )}
@@ -843,6 +888,7 @@ const GateSVG = React.memo(function GateSVG({
   );
 });
 
+// ================= Counts & Chart =================
 function CountsTable({ counts }: { counts: Record<string, number> }) {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   return (
