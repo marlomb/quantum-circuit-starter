@@ -145,12 +145,12 @@ const GATE_LABEL: Record<GateType, string> = {
 
 const THEMES = {
   light: {
-    bg: "rgba(255,255,255,0.02)",   // almost transparent to show neon bg
-    grid: "rgba(255,255,255,0.10)", // soft grid
-    wire: "rgba(255,255,255,0.35)", // softer wires
-    gate: "#e6eef9",                // readable stroke/fill
+    bg: "rgba(255,255,255,0.02)",
+    grid: "rgba(255,255,255,0.10)",
+    wire: "rgba(255,255,255,0.35)",
+    gate: "#e6eef9",
     text: "#e6eef9",
-    select: "#53d7f0",              // matches --cyan
+    select: "#53d7f0",
     label: "#a4b2cc",
   },
   dark: {
@@ -162,7 +162,7 @@ const THEMES = {
     select: "#53d7f0",
     label: "#a4b2cc",
   },
-} as const;
+};
 type ThemeKey = keyof typeof THEMES;
 
 // ================= Main App =================
@@ -187,6 +187,12 @@ export default function App() {
         transformPx?: { tx: number; ty: number }; // live pixel transform for smooth tracking
       }
   >(null);
+
+  // zoom & pan state for the circuit canvas
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const svgContainerRef = useRef<HTMLDivElement | null>(null);
+  const [fitKey, setFitKey] = useState(0); // bump to trigger "fit to view"
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -228,6 +234,8 @@ export default function App() {
     const nClamped = Math.max(1, Math.min(12, n));
     setCircuit(() => emptyCircuit(nClamped));
     setSelected(null);
+    // refit on qubit change
+    setFitKey((k) => k + 1);
   };
 
   const deleteSelectedGate = () => {
@@ -284,7 +292,7 @@ export default function App() {
     if (!ctx) throw new Error("Canvas not supported");
     await new Promise<void>((resolve) => {
       img.onload = () => {
-        ctx.fillStyle = themeBg;
+        ctx.fillStyle = themeBg as string;
         ctx.fillRect(0, 0, can.width, can.height);
         ctx.drawImage(img, 0, 0, can.width, can.height);
         resolve();
@@ -321,65 +329,104 @@ export default function App() {
   const T = THEMES[theme];
 
   return (
-    
-    <div className="neon-bg" style={{ color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}>
-    <div className="app-wrap">
-      <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-        <h1 className="h1" style={{ fontSize: 22, fontWeight: 700 }}>Quantum Circuit Designer</h1>
-        <div className="row">
-          <button className="btn btn-ghost" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-            Theme: {theme}
-          </button>
-          <label>
-            Qubits
-            <input className="input" type="number" min={1} max={12} value={circuit.nQubits}
-              onChange={(e) => setQubits(parseInt(e.target.value || "1"))} style={{ width: 64 }} />
-          </label>
-          <label>
-            Shots
-            <input className="input" type="number" min={1} max={100000} value={shots}
-              onChange={(e) => setShots(parseInt(e.target.value || "512"))} style={{ width: 92 }} />
-          </label>
-          <label>
-            Padding
-            <input className="range" type="range" min={0} max={64} value={padding}
-              onChange={(e) => setPadding(parseInt(e.target.value))} />
-          </label>
-          <label>
-            Aspect
-            <select className="select" value={aspect} onChange={(e) => setAspect(e.target.value)}>
-              <option value="auto">auto</option>
-              <option value="16:9">16:9</option>
-              <option value="4:3">4:3</option>
-              <option value="1:1">1:1</option>
-            </select>
-          </label>
-        </div>
-      </header>
+    <div
+      className="neon-bg"
+      style={{ color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}
+    >
+      <div className="app-wrap">
+        <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+          <h1 className="h1" style={{ fontSize: 22, fontWeight: 700 }}>
+            Quantum Circuit Designer
+          </h1>
+          <div className="row">
+            <button className="btn btn-ghost" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+              Theme: {theme}
+            </button>
+            <label>
+              Qubits
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={12}
+                value={circuit.nQubits}
+                onChange={(e) => setQubits(parseInt(e.target.value || "1"))}
+                style={{ width: 64 }}
+              />
+            </label>
+            <label>
+              Shots
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={100000}
+                value={shots}
+                onChange={(e) => setShots(parseInt(e.target.value || "512"))}
+                style={{ width: 92 }}
+              />
+            </label>
+            <label>
+              Padding
+              <input
+                className="range"
+                type="range"
+                min={0}
+                max={64}
+                value={padding}
+                onChange={(e) => setPadding(parseInt(e.target.value))}
+              />
+            </label>
+            <label>
+              Aspect
+              <select className="select" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+                <option value="auto">auto</option>
+                <option value="16:9">16:9</option>
+                <option value="4:3">4:3</option>
+                <option value="1:1">1:1</option>
+              </select>
+            </label>
+          </div>
+        </header>
 
         <section className="responsive-grid" style={{ display: "grid", gap: 16 }}>
           {/* Left: Controls */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-           <div className="stack">
+          <div className="stack">
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
-               <div className="grid-2">
-                <button className="btn btn-primary" onClick={() => addGate("H", 0, circuit.moments.length)}>H</button>
-                <button className="btn btn-primary" onClick={() => addGate("X", 0, circuit.moments.length)}>X</button>
-                <button className="btn btn-primary" onClick={() => addGate("CX", 0, circuit.moments.length, 1)}>CX</button>
-                <button className="btn" onClick={() => addGate("MEASURE", 0, circuit.moments.length)}>M</button>
+              <div className="grid-2">
+                <button className="btn btn-primary" onClick={() => addGate("H", 0, circuit.moments.length)}>
+                  H
+                </button>
+                <button className="btn btn-primary" onClick={() => addGate("X", 0, circuit.moments.length)}>
+                  X
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => addGate("CX", 0, circuit.moments.length, 1)}
+                >
+                  CX
+                </button>
+                <button className="btn" onClick={() => addGate("MEASURE", 0, circuit.moments.length)}>
+                  M
+                </button>
               </div>
               <div className="row" style={{ marginTop: 8 }}>
-                <button className="btn btn-ghost" onClick={addMoment}>Add time step</button>
-                <button className="btn btn-ghost" onClick={removeLast}>Undo last</button>
+                <button className="btn btn-ghost" onClick={addMoment}>
+                  Add time step
+                </button>
+                <button className="btn btn-ghost" onClick={removeLast}>
+                  Undo last
+                </button>
               </div>
-              <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                Tip: Press & hold a gate, then drag. It follows your pointer smoothly and snaps on drop.
+              <p className="subtle" style={{ fontSize: 12, marginTop: 8 }}>
+                Press & hold a gate, then drag. It follows your pointer smoothly and snaps on drop.
               </p>
             </div>
 
-            <div className="stack">
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Selection</h3>
-              <button onClick={deleteSelectedGate} disabled={!selected}>
+              <button className="btn btn-danger" onClick={deleteSelectedGate} disabled={!selected}>
                 Delete selected gate
               </button>
               {!selected && (
@@ -389,11 +436,19 @@ export default function App() {
 
             <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Export</h3>
-               <div className="grid-2">
-                <button className="btn" onClick={downloadSVG}>Download SVG</button>
-                <button className="btn" onClick={downloadPNG}>Download PNG</button>
-                <button className="btn" onClick={downloadJPG}>Download JPG</button>
-                <button className="btn" onClick={downloadPDF}>Download PDF</button>
+              <div className="grid-2">
+                <button className="btn" onClick={downloadSVG}>
+                  Download SVG
+                </button>
+                <button className="btn" onClick={downloadPNG}>
+                  Download PNG
+                </button>
+                <button className="btn" onClick={downloadJPG}>
+                  Download JPG
+                </button>
+                <button className="btn" onClick={downloadPDF}>
+                  Download PDF
+                </button>
               </div>
             </div>
 
@@ -404,22 +459,61 @@ export default function App() {
           </div>
 
           {/* Right: Canvas + Probs */}
-          <div className="card" style={{ padding: 12 }}>
+          <div className="stack">
             <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Circuit</h3>
-              <CircuitSVG
-                circuit={circuit}
-                padding={padding}
-                themeKey={theme}
-                aspect={aspect}
-                svgRef={svgRef}
-                selected={selected}
-                onDeselect={() => setSelected(null)}
-                onSelect={(t, id) => setSelected({ t, id })}
-                drag={drag}
-                setDrag={setDrag}
-                setCircuit={setCircuit}
-              />
+
+              <div className="canvas-shell" ref={svgContainerRef}>
+                {/* Zoom toolbar */}
+                <div className="zoom-toolbar">
+                  <button className="btn btn-ghost" onClick={() => setFitKey((k) => k + 1)}>
+                    Fit
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setCanvasZoom(1);
+                      setPan({ x: 0, y: 0 });
+                    }}
+                  >
+                    Reset
+                  </button>
+                  <input
+                    className="zoom-range"
+                    type="range"
+                    min={0.4}
+                    max={2.5}
+                    step={0.05}
+                    value={canvasZoom}
+                    onChange={(e) => setCanvasZoom(parseFloat(e.target.value))}
+                    title={`Zoom: ${(canvasZoom * 100).toFixed(0)}%`}
+                  />
+                  <span className="subtle" style={{ fontSize: 12, width: 46, textAlign: "right" }}>
+                    {(canvasZoom * 100).toFixed(0)}%
+                  </span>
+                </div>
+
+                <CircuitSVG
+                  circuit={circuit}
+                  padding={padding}
+                  themeKey={theme}
+                  aspect={aspect}
+                  svgRef={svgRef}
+                  selected={selected}
+                  onDeselect={() => setSelected(null)}
+                  onSelect={(t, id) => setSelected({ t, id })}
+                  drag={drag}
+                  setDrag={setDrag}
+                  setCircuit={setCircuit}
+                  // zoom/pan props
+                  zoom={canvasZoom}
+                  pan={pan}
+                  setPan={setPan}
+                  containerRef={svgContainerRef}
+                  fitKey={fitKey}
+                  onZoomChange={setCanvasZoom}
+                />
+              </div>
             </div>
 
             <div className="card" style={{ padding: 12 }}>
@@ -434,10 +528,14 @@ export default function App() {
 }
 
 function PaletteButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return <button className="btn btn-primary" onClick={onClick}>{label}</button>;
+  return (
+    <button className="btn btn-primary" onClick={onClick}>
+      {label}
+    </button>
+  );
 }
 
-// ================= CircuitSVG (press-and-hold + smooth drag) =================
+// ================= CircuitSVG (press-and-hold + smooth drag + zoom/pan) =================
 function CircuitSVG({
   circuit,
   padding,
@@ -450,6 +548,13 @@ function CircuitSVG({
   drag,
   setDrag,
   setCircuit,
+  // zoom/pan
+  zoom,
+  pan,
+  setPan,
+  containerRef,
+  fitKey,
+  onZoomChange,
 }: {
   circuit: Circuit;
   padding: number;
@@ -470,6 +575,12 @@ function CircuitSVG({
   };
   setDrag: React.Dispatch<React.SetStateAction<any>>;
   setCircuit: React.Dispatch<React.SetStateAction<Circuit>>;
+  zoom: number;
+  pan: { x: number; y: number };
+  setPan: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  fitKey: number;
+  onZoomChange: (z: number) => void;
 }) {
   const T = THEMES[themeKey];
   const cellW = 72;
@@ -480,14 +591,16 @@ function CircuitSVG({
   const width = padding * 2 + labelW + cols * cellW;
   const height = padding * 2 + wires * cellH;
 
-  const viewBox = useMemo(() => {
-    if (aspect === "auto") return `0 0 ${width} ${height}`;
-    const [aw, ah] = aspect.split(":").map(Number);
-    const targetH = (height * aw) / ah;
-    const vbH = Math.max(height, targetH);
-    const vbW = (vbH * aw) / ah;
-    return `0 0 ${vbW} ${vbH}`;
-  }, [width, height, aspect]);
+  // --- viewBox with zoom/pan ---
+  const contentW = width;
+  const contentH = height;
+
+  const [vx, vy, vw, vh] = useMemo(() => {
+    const vw = contentW / zoom;
+    const vh = contentH / zoom;
+    return [pan.x, pan.y, vw, vh];
+  }, [contentW, contentH, zoom, pan]);
+  const viewBox = `${vx} ${vy} ${vw} ${vh}`;
 
   // --- Press & Hold to start drag
   const HOLD_MS = 200;
@@ -524,7 +637,7 @@ function CircuitSVG({
     pendingRef.current = null;
   };
 
-  // --- coords helpers
+  // --- coords helpers (respects viewBox; CTM handles transforms)
   const toLocalFromXY = (clientX: number, clientY: number) => {
     const svg = svgRef.current!;
     const pt = svg.createSVGPoint();
@@ -556,31 +669,47 @@ function CircuitSVG({
   };
   useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
-  // --- pointer move handlers (continuous tracking)
-  const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  // --- panning (Space+drag or middle mouse)
+  const [spaceDown, setSpaceDown] = useState(false);
+  const panStart = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+
+  useEffect(() => {
+    const kd = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(true); };
+    const ku = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(false); };
+    window.addEventListener("keydown", kd);
+    window.addEventListener("keyup", ku);
+    return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
+  }, []);
+
+  const startPan = (clientX: number, clientY: number) => {
+    panStart.current = { x: clientX, y: clientY, vx: pan.x, vy: pan.y };
+  };
+  const movePan = (clientX: number, clientY: number) => {
+    if (!panStart.current || !containerRef.current) return;
+    // convert pixel delta to SVG units (depends on zoom and container size)
+    const dxPx = clientX - panStart.current.x;
+    const dyPx = clientY - panStart.current.y;
+    const pw = containerRef.current.clientWidth || 1;
+    const ph = containerRef.current.clientHeight || 1;
+    const dx = dxPx * (contentW / (pw * zoom));
+    const dy = dyPx * (contentH / (ph * zoom));
+    setPan({ x: panStart.current.vx - dx, y: panStart.current.vy - dy });
+  };
+  const endPan = () => { panStart.current = null; };
+
+  // --- pointer move handlers (continuous tracking for gate drag)
+  const handleDragMove = (clientX: number, clientY: number) => {
     if (!drag) return;
-    const { x, y } = toLocalFromXY(e.clientX, e.clientY);
+    const { x, y } = toLocalFromXY(clientX, clientY);
     const baseX = drag.t * cellW + drag.dx;
     const baseQ = drag.targets[0]; // for CX, this is control row
     const baseY = baseQ * cellH + drag.dy;
     schedulePx(x - baseX, y - baseY);
   };
 
-  const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
-    if (!drag) return;
-    const t0 = e.touches[0];
-    if (!t0) return;
-    const { x, y } = toLocalFromXY(t0.clientX, t0.clientY);
-    const baseX = drag.t * cellW + drag.dx;
-    const baseQ = drag.targets[0];
-    const baseY = baseQ * cellH + drag.dy;
-    schedulePx(x - baseX, y - baseY);
-    e.preventDefault();
-  };
-
   // --- drop logic (snap to grid on release)
-  const dropAt = (x: number, y: number) => {
-    // compute snapped column/row from pointer at release
+  const dropAtLocal = (clientX: number, clientY: number) => {
+    const { x, y } = toLocalFromXY(clientX, clientY);
     let tNew = clamp(Math.round((x - drag!.dx) / cellW), 0, Math.max(0, cols - 1));
     if (tNew >= cols) {
       setCircuit((c) => {
@@ -623,22 +752,78 @@ function CircuitSVG({
     cancelHold();
   };
 
-  const onMouseUp = (e: React.MouseEvent<SVGSVGElement>) => {
+  // --- Fit to container whenever fitKey changes or content size changes
+  useEffect(() => {
+    const el = containerRef.current;
+    const svg = svgRef.current;
+    if (!el || !svg) return;
+    const pw = el.clientWidth;
+    const ph = el.clientHeight;
+    if (pw <= 0 || ph <= 0) return;
+
+    const margin = 16; // px
+    const fitX = contentW / Math.max(1, pw - margin);
+    const fitY = contentH / Math.max(1, ph - margin);
+    const z = 1 / Math.max(fitX, fitY);
+
+    const vw = contentW / z;
+    const vh = contentH / z;
+    const nx = (contentW - vw) / 2;
+    const ny = (contentH - vh) / 2;
+
+    onZoomChange(+z.toFixed(2));
+    setPan({ x: nx, y: ny });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey, contentW, contentH]);
+
+  // --- SVG event bindings (wrap panning + dragging)
+  const onMouseDownWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button === 1 /* middle */ || (e.button === 0 && (e as any).nativeEvent?.buttons === 1 && (e as any).nativeEvent?.shiftKey) || (e.button === 0 && (e as any).nativeEvent && (e as any).nativeEvent?.which === 1 && (e as any).nativeEvent?.ctrlKey)) {
+      // alt/ctrl/shift optional variants if you want, but primary: middle or Space in move handler
+      e.preventDefault();
+    }
+    if (e.button === 1 || (e.button === 0 && (e as any).nativeEvent?.buttons === 1 && (e as any).nativeEvent?.altKey)) {
+      // middle or left+Alt starts pan (optional)
+      startPan(e.clientX, e.clientY);
+    }
+  };
+
+  const onMouseMoveWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (spaceDown || panStart.current) {
+      // pan mode
+      if (!panStart.current) startPan(e.clientX, e.clientY);
+      movePan(e.clientX, e.clientY);
+      return;
+    }
+    // gate drag preview
+    if (drag) handleDragMove(e.clientX, e.clientY);
+  };
+
+  const onMouseUpWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (panStart.current) {
+      endPan();
+      return;
+    }
     if (drag) {
-      const { x, y } = toLocalFromXY(e.clientX, e.clientY);
-      dropAt(x, y);
+      dropAtLocal(e.clientX, e.clientY);
       return;
     }
     if (pendingRef.current) cancelHold();
   };
 
-  const onTouchEnd = (e: React.TouchEvent<SVGSVGElement>) => {
+  const onTouchMoveWrapper = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (!drag) return;
+    const t0 = e.touches[0];
+    if (!t0) return;
+    handleDragMove(t0.clientX, t0.clientY);
+    e.preventDefault();
+  };
+
+  const onTouchEndWrapper = (e: React.TouchEvent<SVGSVGElement>) => {
     if (drag) {
       const t0 = e.changedTouches[0];
-      if (t0) {
-        const { x, y } = toLocalFromXY(t0.clientX, t0.clientY);
-        dropAt(x, y);
-      } else {
+      if (t0) dropAtLocal(t0.clientX, t0.clientY);
+      else {
         setDrag(null);
         cancelHold();
       }
@@ -648,12 +833,43 @@ function CircuitSVG({
     if (pendingRef.current) cancelHold();
   };
 
+  const onWheelWrapper = (e: React.WheelEvent<SVGSVGElement>) => {
+    // Ctrl/Meta wheel zoom (also catches pinch on many trackpads)
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = -e.deltaY; // up => positive
+      const factor = Math.exp(delta * 0.0015);
+      const newZ = Math.min(2.5, Math.max(0.4, zoom * factor));
+
+      const svg = svgRef.current!;
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const inv = ctm.inverse();
+      const p = pt.matrixTransform(inv); // svg coords
+
+      const vw0 = contentW / zoom;
+      const vh0 = contentH / zoom;
+      const vw1 = contentW / newZ;
+      const vh1 = contentH / newZ;
+
+      const nx = pan.x + (p.x - pan.x) - (p.x - pan.x) * (vw1 / vw0);
+      const ny = pan.y + (p.y - pan.y) - (p.y - pan.y) * (vh1 / vh0);
+
+      onZoomChange(+newZ.toFixed(2));
+      setPan({ x: nx, y: ny });
+    }
+  };
+
   return (
     <svg
       ref={svgRef}
       viewBox={viewBox}
       width="100%"
-      style={{ background: T.bg, borderRadius: 12, touchAction: "none" }}
+      height="100%" // fill the shell
+      style={{ background: T.bg, borderRadius: 12, touchAction: "none", display: "block" }}
       shapeRendering="geometricPrecision"
       onClick={(e) => {
         if ((e.target as Element).tagName === "svg") {
@@ -661,15 +877,27 @@ function CircuitSVG({
           onDeselect();
         }
       }}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
+      // wrappers
+      onMouseDown={onMouseDownWrapper}
+      onMouseMove={onMouseMoveWrapper}
+      onMouseUp={onMouseUpWrapper}
+      onMouseLeave={() => { if (panStart.current) endPan(); }}
+      onTouchMove={onTouchMoveWrapper}
+      onTouchEnd={onTouchEndWrapper}
+      onWheel={onWheelWrapper}
     >
       <g transform={`translate(${padding}, ${padding})`}>
         {/* qubit labels */}
         {Array.from({ length: wires }).map((_, q) => (
-          <text key={q} x={0} y={q * cellH + cellH / 2 + 5} textAnchor="start" fill={T.label} fontSize={12} style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}>
+          <text
+            key={q}
+            x={0}
+            y={q * cellH + cellH / 2 + 5}
+            textAnchor="start"
+            fill={T.label}
+            fontSize={12}
+            style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}
+          >
             {`q${q}`}
           </text>
         ))}
@@ -795,7 +1023,8 @@ const GateSVG = React.memo(function GateSVG({
     const yT = yCenter(cIdx + diff);
 
     return (
-      <g className={selected ? "glow-strong" : "glow-soft"}
+      <g
+        className={selected ? "glow-strong" : "glow-soft"}
         transform={`translate(${tx}, ${ty})`}
         style={{ cursor: "grab", willChange: "transform" }}
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
@@ -820,7 +1049,8 @@ const GateSVG = React.memo(function GateSVG({
   const label = GATE_LABEL[gate.type];
 
   return (
-    <g  className={selected ? "glow-strong" : "glow-soft"}
+    <g
+      className={selected ? "glow-strong" : "glow-soft"}
       transform={`translate(${tx}, ${ty})`}
       style={{ cursor: "grab", willChange: "transform" }}
       onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
@@ -838,9 +1068,29 @@ const GateSVG = React.memo(function GateSVG({
         pointerEvents="all"
       />
       {selected && (
-        <rect x={x - 4} y={y - 4} width={w + 8} height={h + 8} rx={10} ry={10} fill="none" stroke={selColor} strokeWidth={2} />
+        <rect
+          x={x - 4}
+          y={y - 4}
+          width={w + 8}
+          height={h + 8}
+          rx={10}
+          ry={10}
+          fill="none"
+          stroke={selColor}
+          strokeWidth={2}
+        />
       )}
-      <rect x={x} y={y} width={w} height={h} rx={8} ry={8} fill="none" stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={8}
+        ry={8}
+        fill="none"
+        stroke={selected ? selColor : gateColor}
+        strokeWidth={selected ? 3 : 2}
+      />
       <text x={x + w / 2} y={y + h / 2 + 5} fontSize={16} textAnchor="middle" fill={selected ? selColor : gateColor}>
         {label}
       </text>
