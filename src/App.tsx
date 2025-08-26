@@ -3,7 +3,7 @@ import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
 import "./theme.css";
 
-// ================= Quantum math utils =================
+/* ================= Quantum math utils ================= */
 const SQRT1_2 = Math.SQRT1_2;
 
 type Complex = { re: number; im: number };
@@ -97,11 +97,21 @@ function sampleCounts(probs: number[], shots: number): Record<string, number> {
   return counts;
 }
 
-// ================= Circuit model =================
+/* ================= Circuit model ================= */
 type GateType = "H" | "X" | "CX" | "MEASURE";
-type Gate = { id: string; type: GateType; targets: number[] };
+
+type Gate = {
+  id: string;
+  type: GateType;
+  targets: number[]; // [q] or [control, target] for CX
+};
+
 type Moment = { t: number; gates: Gate[] };
-type Circuit = { nQubits: number; moments: Moment[] };
+
+type Circuit = {
+  nQubits: number;
+  moments: Moment[];
+};
 
 function emptyCircuit(nQubits = 2): Circuit {
   return { nQubits, moments: [] };
@@ -114,14 +124,14 @@ function simulateCircuit(circ: Circuit) {
       if (g.type === "H") applyH(st, g.targets[0]);
       else if (g.type === "X") applyX(st, g.targets[0]);
       else if (g.type === "CX") applyCX(st, g.targets[0], g.targets[1]);
-      // MEASURE: no collapse; we show probabilities
+      // MEASURE: no collapse; we display probabilities
     }
   }
   const probs = probsFromState(st);
   return { probs };
 }
 
-// ================= UI & helpers =================
+/* ================= UI & helpers ================= */
 function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
@@ -129,10 +139,11 @@ function uid() {
 const GATE_LABEL: Record<GateType, string> = {
   H: "H",
   X: "X",
-  CX: "●⊕",
+  CX: "⊕", // only used as fallback text in certain renderings
   MEASURE: "M",
 };
 
+/* ==== Theme (light default, dark optional) ==== */
 const THEMES = {
   light: {
     bg: "#ffffff",
@@ -143,10 +154,10 @@ const THEMES = {
     label: "#6b7280",
     select: "#14b8a6",
     gates: {
-      hFill: "#ef4444",      // H red
+      hFill: "#ef4444",
       hText: "#ffffff",
-      xStroke: "#3b82f6",    // ⊕ blue (X and CNOT target)
-      cxControl: "#3b82f6",  // control dot
+      xStroke: "#3b82f6",
+      cxControl: "#3b82f6",
       measureStroke: "#6b7280",
     },
   },
@@ -169,14 +180,31 @@ const THEMES = {
 };
 type ThemeKey = keyof typeof THEMES;
 
-// ================= Main App =================
+/* ================= Main App ================= */
 export default function App() {
   const [circuit, setCircuit] = useState<Circuit>(() => emptyCircuit(2));
   const [shots, setShots] = useState(512);
-  const [theme, setTheme] = useState<ThemeKey>("light");
-  const [selected, setSelected] = useState<{ t: number; id: string } | null>(null);
 
-  // drag state
+  // Theme with persistence
+  const [theme, setTheme] = useState<ThemeKey>(() => {
+    const saved = localStorage.getItem("theme") as ThemeKey | null;
+    if (saved === "light" || saved === "dark") return saved;
+    const prefersDark =
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
+  });
+  useEffect(() => {
+    document.body.classList.remove("theme-light", "theme-dark");
+    document.body.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const [selected, setSelected] = useState<{ t: number; id: string } | null>(
+    null
+  );
+
+  // drag state (active drag only)
   const [drag, setDrag] = useState<
     | null
     | {
@@ -184,137 +212,120 @@ export default function App() {
         t: number;
         type: GateType;
         targets: number[];
-        dx: number;
-        dy: number;
-        transformPx?: { tx: number; ty: number };
+        dx: number; // local offset inside cell (xCenter)
+        dy: number; // local offset inside cell (yCenter)
+        transformPx?: { tx: number; ty: number }; // live pixel transform for smooth tracking
       }
   >(null);
 
-  // zoom via container scrollbars
-  const [canvasZoom, setCanvasZoom] = useState(1);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Zoom/scroll container and zoom factor
   const svgContainerRef = useRef<HTMLDivElement | null>(null);
+  const [canvasZoom, setCanvasZoom] = useState(1);
   const [fitKey, setFitKey] = useState(0);
 
-  // Space+drag (or middle mouse) → pan by scrolling
-  const [spaceDown, setSpaceDown] = useState(false);
-  const panStartRef = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
-
+  // Fit to view whenever requested / structure changes
   useEffect(() => {
-    const kd = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(true); };
-    const ku = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(false); };
-    window.addEventListener("keydown", kd);
-    window.addEventListener("keyup", ku);
-    return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
-  }, []);
-
-  const beginPanScroll = (clientX: number, clientY: number) => {
-    const el = svgContainerRef.current!;
-    panStartRef.current = { x: clientX, y: clientY, sx: el.scrollLeft, sy: el.scrollTop };
-  };
-  const movePanScroll = (clientX: number, clientY: number) => {
-    const s = panStartRef.current; if (!s || !svgContainerRef.current) return;
-    const el = svgContainerRef.current;
-    el.scrollLeft = s.sx - (clientX - s.x);
-    el.scrollTop  = s.sy - (clientY - s.y);
-  };
-  const endPanScroll = () => { panStartRef.current = null; };
-
-  // Wheel/trackpad pinch to zoom (container-level) with cursor anchor
-  const onContainerWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    // zoom always
-    e.preventDefault();
     const el = svgContainerRef.current;
     if (!el) return;
 
-    // Normalize deltas across devices/browsers
-    // deltaMode: 0=pixel, 1=line, 2=page
-    const LINE_HEIGHT = 16; // typical line height
-    const deltaY =
-      e.deltaMode === 1 ? e.deltaY * LINE_HEIGHT :
-      e.deltaMode === 2 ? e.deltaY * window.innerHeight :
-      e.deltaY;
+    const cellW = 72,
+      cellH = 56,
+      labelW = 36;
+    const cols = Math.max(1, circuit.moments.length || 1);
+    const contentW = labelW + cols * cellW;
+    const contentH = circuit.nQubits * cellH;
 
-    const delta = -deltaY; // up => zoom in
-    const factor = Math.exp(delta * 0.0012); // slightly gentler
+    const margin = 16;
+    const fitX = contentW / Math.max(1, el.clientWidth - margin);
+    const fitY = contentH / Math.max(1, el.clientHeight - margin);
+    const z = 1 / Math.max(fitX, fitY);
+    const nz = Math.min(3, Math.max(0.4, +z.toFixed(2)));
+    setCanvasZoom(nz);
+
+    requestAnimationFrame(() => {
+      const pxW = contentW * nz,
+        pxH = contentH * nz;
+      el.scrollLeft = Math.max(0, (pxW - el.clientWidth) / 2);
+      el.scrollTop = Math.max(0, (pxH - el.clientHeight) / 2);
+    });
+  }, [fitKey, circuit.moments.length, circuit.nQubits]);
+
+  // Normalize wheel zoom; keep cursor point stable
+  const onContainerWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = svgContainerRef.current;
+    if (!el) return;
+    const LINE_HEIGHT = 16;
+    const deltaY =
+      e.deltaMode === 1
+        ? e.deltaY * LINE_HEIGHT
+        : e.deltaMode === 2
+        ? e.deltaY * window.innerHeight
+        : e.deltaY;
+    const delta = -deltaY;
+    const factor = Math.exp(delta * 0.0012);
     const newZ = Math.min(3, Math.max(0.4, canvasZoom * factor));
 
     const rect = el.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
-
-    // Content coords (unscaled) under cursor
     const ux = (el.scrollLeft + cx) / canvasZoom;
-    const uy = (el.scrollTop  + cy) / canvasZoom;
+    const uy = (el.scrollTop + cy) / canvasZoom;
 
     setCanvasZoom(+newZ.toFixed(2));
-
     requestAnimationFrame(() => {
       el.scrollLeft = ux * newZ - cx;
-      el.scrollTop  = uy * newZ - cy;
+      el.scrollTop = uy * newZ - cy;
     });
   };
 
+  // Simple middle-mouse / space panning (optional – space flag kept simple)
+  const spaceDownRef = useRef(false);
   useEffect(() => {
-    const el = svgContainerRef.current;
-
-    const onDbl = () => setFitKey(k => k + 1);
-    el?.addEventListener("dblclick", onDbl);
-
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "0") { e.preventDefault(); setFitKey(k => k + 1); }
-      if ((e.ctrlKey || e.metaKey) && e.key === "1") {
-        e.preventDefault();
-        setCanvasZoom(1);
-        const c = svgContainerRef.current; if (c) { c.scrollLeft = 0; c.scrollTop = 0; }
-      }
-      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (e.key === "=" || e.key === "+") { // zoom in
-          const c = svgContainerRef.current; if (!c) return;
-          const cx = c.clientWidth / 2, cy = c.clientHeight / 2;
-          const ux = (c.scrollLeft + cx) / canvasZoom;
-          const uy = (c.scrollTop  + cy) / canvasZoom;
-          const z = Math.min(3, +(canvasZoom * 1.1).toFixed(2));
-          setCanvasZoom(z);
-          requestAnimationFrame(() => { c.scrollLeft = ux * z - cx; c.scrollTop = uy * z - cy; });
-        }
-        if (e.key === "-" || e.key === "_") { // zoom out
-          const c = svgContainerRef.current; if (!c) return;
-          const cx = c.clientWidth / 2, cy = c.clientHeight / 2;
-          const ux = (c.scrollLeft + cx) / canvasZoom;
-          const uy = (c.scrollTop  + cy) / canvasZoom;
-          const z = Math.max(0.4, +(canvasZoom / 1.1).toFixed(2));
-          setCanvasZoom(z);
-          requestAnimationFrame(() => { c.scrollLeft = ux * z - cx; c.scrollTop = uy * z - cy; });
-        }
-        if (e.key.toLowerCase() === "f") setFitKey(k => k + 1);
-        if (e.key.toLowerCase() === "s" && selected) {
-          // center on selected gate
-          const cellW = 72, cellH = 56, labelW = 36;
-          const m = circuit.moments.find(mm => mm.t === selected.t);
-          const g = m?.gates.find(gg => gg.id === selected.id);
-          if (!g) return;
-          const gx = 24 + labelW + selected.t * cellW + cellW / 2;
-          const gy = 24 + (g.targets[0] * cellH) + cellH / 2;
-
-          const c = svgContainerRef.current; if (!c) return;
-          const targetLeft = gx * canvasZoom - c.clientWidth / 2;
-          const targetTop  = gy * canvasZoom - c.clientHeight / 2;
-          c.scrollLeft = Math.max(0, targetLeft);
-          c.scrollTop  = Math.max(0, targetTop);
-        }
-      }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") spaceDownRef.current = true;
     };
-
-  window.addEventListener("keydown", onKey);
-  return () => {
-    el?.removeEventListener("dblclick", onDbl);
-    window.removeEventListener("keydown", onKey);
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") spaceDownRef.current = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+  const panStartRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
+  const beginPanScroll = (clientX: number, clientY: number) => {
+    const c = svgContainerRef.current;
+    if (!c) return;
+    panStartRef.current = { x: clientX, y: clientY, sl: c.scrollLeft, st: c.scrollTop };
+    c.classList.add("panning");
   };
-}, [canvasZoom, selected, circuit]);
+  const movePanScroll = (clientX: number, clientY: number) => {
+    const c = svgContainerRef.current;
+    if (!c || !panStartRef.current) return;
+    const dx = clientX - panStartRef.current.x;
+    const dy = clientY - panStartRef.current.y;
+    c.scrollLeft = panStartRef.current.sl - dx;
+    c.scrollTop = panStartRef.current.st - dy;
+  };
+  const endPanScroll = () => {
+    const c = svgContainerRef.current;
+    if (!c) return;
+    panStartRef.current = null;
+    c.classList.remove("panning");
+  };
 
+  const { probs, counts } = useMemo(() => {
+    const { probs } = simulateCircuit(circuit);
+    const counts = sampleCounts(probs, shots);
+    return { probs, counts };
+  }, [circuit, shots]);
 
-  const svgRef = useRef<SVGSVGElement | null>(null);
-
+  /* -------- Circuit editing helpers -------- */
   const addMoment = () => {
     setCircuit((c) => ({ ...c, moments: [...c.moments, { t: c.moments.length, gates: [] }] }));
   };
@@ -332,7 +343,11 @@ export default function App() {
     ensureMoment(t);
     setCircuit((c) => {
       const ms = c.moments.map((m) => ({ ...m, gates: [...m.gates] }));
-      const gate: Gate = { id: uid(), type, targets: type === "CX" ? [q0, q1 ?? (q0 ^ 1)] : [q0] };
+      const gate: Gate = {
+        id: uid(),
+        type,
+        targets: type === "CX" ? [q0, q1 ?? Math.min(q0 + 1, c.nQubits - 1)] : [q0],
+      };
       ms[t].gates.push(gate);
       return { ...c, moments: ms };
     });
@@ -380,13 +395,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selected]);
 
-  const { probs, counts } = useMemo(() => {
-    const { probs } = simulateCircuit(circuit);
-    const counts = sampleCounts(probs, shots);
-    return { probs, counts };
-  }, [circuit, shots]);
-
-  // -------- Export helpers --------
+  /* -------- Export helpers -------- */
   const serializeSVG = () => {
     const svg = svgRef.current;
     if (!svg) return "";
@@ -398,7 +407,6 @@ export default function App() {
   const svgToCanvas = async (scale = 3) => {
     const data = serializeSVG();
     const img = new Image();
-    const themeBg = THEMES[theme].bg;
     const can = document.createElement("canvas");
     const svg = svgRef.current!;
     const vb = svg.viewBox.baseVal;
@@ -410,7 +418,7 @@ export default function App() {
     if (!ctx) throw new Error("Canvas not supported");
     await new Promise<void>((resolve) => {
       img.onload = () => {
-        ctx.fillStyle = themeBg as string;
+        ctx.fillStyle = THEMES[theme].bg;
         ctx.fillRect(0, 0, can.width, can.height);
         ctx.drawImage(img, 0, 0, can.width, can.height);
         resolve();
@@ -446,185 +454,139 @@ export default function App() {
 
   const T = THEMES[theme];
 
-  // Fit to container whenever layout changes or Fit pressed
-  useEffect(() => {
-    const el = svgContainerRef.current;
-    if (!el) return;
-
-    // match CircuitSVG’s content metrics (NO padding)
-    const cellW = 72, cellH = 56, labelW = 36;
-    const cols = Math.max(1, circuit.moments.length || 1);
-    const contentW = labelW + cols * cellW;
-    const contentH = circuit.nQubits * cellH;
-
-    const margin = 16;
-    const fitX = contentW / Math.max(1, el.clientWidth  - margin);
-    const fitY = contentH / Math.max(1, el.clientHeight - margin);
-    const z = 1 / Math.max(fitX, fitY);
-    const nz = Math.min(3, Math.max(0.4, +z.toFixed(2)));
-    setCanvasZoom(nz);
-
-    requestAnimationFrame(() => {
-      const pxW = contentW * nz, pxH = contentH * nz;
-      el.scrollLeft = Math.max(0, (pxW - el.clientWidth)  / 2);
-      el.scrollTop  = Math.max(0, (pxH - el.clientHeight) / 2);
-    });
-  }, [fitKey, circuit.moments.length, circuit.nQubits]); // ← remove `padding` from deps
-
   return (
-    <div className="neon-bg" style={{ color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}>
-      <div className="app-wrap">
-        <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <h1 className="h1" style={{ fontSize: 22, fontWeight: 700 }}>Quantum Circuit Designer</h1>
-          <div className="row">
-            <button className="btn btn-ghost" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-              Theme: {theme}
+    <div className="app-wrap">
+      <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Quantum Circuit Designer</h1>
+        <div className="row">
+          <button
+            className="btn btn-ghost"
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            title="Toggle Light/Dark"
+          >
+            {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+          </button>
+
+          <label>
+            Qubits
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={12}
+              value={circuit.nQubits}
+              onChange={(e) => setQubits(parseInt(e.target.value || "1"))}
+              style={{ width: 72, marginLeft: 6 }}
+            />
+          </label>
+
+          <label>
+            Shots
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={100000}
+              value={shots}
+              onChange={(e) => setShots(parseInt(e.target.value || "512"))}
+              style={{ width: 96, marginLeft: 6 }}
+            />
+          </label>
+
+          <button className="btn" onClick={() => setFitKey(k => k + 1)} title="Fit to view">Fit</button>
+        </div>
+      </header>
+
+      <section style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16 }}>
+        {/* Left: Panels */}
+        <div className="stack">
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
+            <div className="grid-2">
+              <button className="btn" onClick={() => addGate("H", 0, circuit.moments.length)}>H</button>
+              <button className="btn" onClick={() => addGate("X", 0, circuit.moments.length)}>X</button>
+              <button className="btn" onClick={() => addGate("CX", 0, circuit.moments.length, 1)}>CX</button>
+              <button className="btn" onClick={() => addGate("MEASURE", 0, circuit.moments.length)}>M</button>
+            </div>
+            <div style={{ marginTop: 8 }} className="row">
+              <button className="btn" onClick={addMoment}>Add time step</button>
+              <button className="btn" onClick={removeLast}>Undo last</button>
+            </div>
+            <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+              Tip: Press & hold a gate, then drag. It follows smoothly and snaps on drop. Use mouse wheel to zoom; scrollbars appear when zoomed.
+            </p>
+          </div>
+
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Selection</h3>
+            <button className="btn btn-danger" onClick={deleteSelectedGate} disabled={!selected}>
+              Delete selected
             </button>
-            <label>
-              Qubits
-              <input className="input" type="number" min={1} max={12} value={circuit.nQubits}
-                onChange={(e) => setQubits(parseInt(e.target.value || "1"))} style={{ width: 64 }} />
-            </label>
-            <label>
-              Shots
-              <input className="input" type="number" min={1} max={100000} value={shots}
-                onChange={(e) => setShots(parseInt(e.target.value || "512"))} style={{ width: 92 }} />
-            </label>
+            {!selected && <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>No gate selected</p>}
           </div>
-        </header>
 
-        <section className="responsive-grid" style={{ display: "grid", gap: 16 }}>
-          {/* Left: Controls */}
-          <div className="stack">
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
-              <div className="grid-2">
-                <button className="btn btn-primary" onClick={() => addGate("H", 0, circuit.moments.length)}>H</button>
-                <button className="btn btn-primary" onClick={() => addGate("X", 0, circuit.moments.length)}>X</button>
-                <button className="btn btn-primary" onClick={() => addGate("CX", 0, circuit.moments.length, 1)}>CX</button>
-                <button className="btn" onClick={() => addGate("MEASURE", 0, circuit.moments.length)}>M</button>
-              </div>
-              <div className="row" style={{ marginTop: 8 }}>
-                <button className="btn btn-ghost" onClick={addMoment}>Add time step</button>
-                <button className="btn btn-ghost" onClick={removeLast}>Undo last</button>
-              </div>
-              <p className="subtle" style={{ fontSize: 12, marginTop: 8 }}>
-                Press & hold a gate, then drag. It follows your pointer and snaps on drop.
-              </p>
-            </div>
-
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Selection</h3>
-              <button className="btn btn-danger" onClick={deleteSelectedGate} disabled={!selected}>
-                Delete selected gate
-              </button>
-              {!selected && <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>No gate selected</p>}
-            </div>
-
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Export</h3>
-              <div className="grid-2">
-                <button className="btn" onClick={downloadSVG}>Download SVG</button>
-                <button className="btn" onClick={downloadPNG}>Download PNG</button>
-                <button className="btn" onClick={downloadJPG}>Download JPG</button>
-                <button className="btn" onClick={downloadPDF}>Download PDF</button>
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Measurement (shots)</h3>
-              <CountsTable counts={counts} />
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Export</h3>
+            <div className="grid-2">
+              <button className="btn" onClick={downloadSVG}>SVG</button>
+              <button className="btn" onClick={downloadPNG}>PNG</button>
+              <button className="btn" onClick={downloadJPG}>JPG</button>
+              <button className="btn" onClick={downloadPDF}>PDF</button>
             </div>
           </div>
 
-          {/* Right: Canvas + Probs */}
-          <div className="stack">
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Circuit</h3>
-
-              <div
-                className={`canvas-shell${panStartRef.current ? " panning" : ""}`}
-                ref={svgContainerRef}
-                onWheel={onContainerWheel}
-                onMouseDown={(e) => {
-                  if (e.button === 1 || spaceDown) {
-                    e.preventDefault();
-                    beginPanScroll(e.clientX, e.clientY);
-                  }
-                }}
-                onMouseMove={(e) => { if (panStartRef.current) movePanScroll(e.clientX, e.clientY); }}
-                onMouseUp={() => endPanScroll()}
-                onMouseLeave={() => endPanScroll()}
-              >
-                {/* Zoom toolbar */}
-                <div className="zoom-toolbar">
-                  <button className="btn btn-ghost" onClick={() => setFitKey((k) => k + 1)}>Fit</button>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      setCanvasZoom(1);
-                      const el = svgContainerRef.current;
-                      if (el) { el.scrollLeft = 0; el.scrollTop = 0; }
-                    }}
-                  >
-                    Reset
-                  </button>
-                  <input
-                    className="zoom-range"
-                    type="range"
-                    min={0.4}
-                    max={3}
-                    step={0.05}
-                    value={canvasZoom}
-                    onChange={(e) => {
-                      const el = svgContainerRef.current;
-                      if (!el) return;
-                      const rect = el.getBoundingClientRect();
-                      const cx = rect.width / 2;
-                      const cy = rect.height / 2;
-                      const ux = (el.scrollLeft + cx) / canvasZoom;
-                      const uy = (el.scrollTop + cy) / canvasZoom;
-                      const z = parseFloat(e.target.value);
-                      setCanvasZoom(z);
-                      requestAnimationFrame(() => {
-                        el.scrollLeft = ux * z - cx;
-                        el.scrollTop  = uy * z - cy;
-                      });
-                    }}
-                    title={`Zoom: ${(canvasZoom * 100).toFixed(0)}%`}
-                  />
-                  <span className="subtle" style={{ fontSize: 12, width: 46, textAlign: "right" }}>
-                    {(canvasZoom * 100).toFixed(0)}%
-                  </span>
-                </div>
-
-                <CircuitSVG
-                  circuit={circuit}
-                  themeKey={theme}
-                  svgRef={svgRef}
-                  selected={selected}
-                  onDeselect={() => setSelected(null)}
-                  onSelect={(t, id) => setSelected({ t, id })}
-                  drag={drag}
-                  setDrag={setDrag}
-                  setCircuit={setCircuit}
-                  zoom={canvasZoom}   // scaled pixel size → scrollbars
-                />
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>State Probabilities</h3>
-              <BarChart probs={probs} />
-            </div>
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Measurement (shots)</h3>
+            <CountsTable counts={counts} />
           </div>
-        </section>
-      </div>
+        </div>
+
+        {/* Right: Canvas + Probs */}
+        <div className="stack">
+          <div
+            className={`canvas-shell${panStartRef.current ? " panning" : ""}`}
+            ref={svgContainerRef}
+            onWheel={onContainerWheel}
+            onMouseDown={(e) => {
+              if (e.button === 1 || spaceDownRef.current) {
+                e.preventDefault();
+                beginPanScroll(e.clientX, e.clientY);
+              }
+            }}
+            onMouseMove={(e) => { if (panStartRef.current) movePanScroll(e.clientX, e.clientY); }}
+            onMouseUp={() => endPanScroll()}
+            onMouseLeave={() => endPanScroll()}
+          >
+            {/* (Optional) mini zoom toolbar placeholder
+            <div className="zoom-toolbar">
+              <span>Zoom: {(canvasZoom*100).toFixed(0)}%</span>
+            </div> */}
+
+            <CircuitSVG
+              circuit={circuit}
+              themeKey={theme}
+              svgRef={svgRef}
+              selected={selected}
+              onDeselect={() => setSelected(null)}
+              onSelect={(t, id) => setSelected({ t, id })}
+              drag={drag}
+              setDrag={setDrag}
+              setCircuit={setCircuit}
+              zoom={canvasZoom}
+            />
+          </div>
+
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>State Probabilities</h3>
+            <BarChart probs={probs} />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
 
-// ================= CircuitSVG (zoom + scroll, no padding) =================
+/* =============== CircuitSVG (zoom + scroll, no padding) =============== */
 function CircuitSVG({
   circuit,
   themeKey,
@@ -679,23 +641,11 @@ function CircuitSVG({
   const holdTimerRef = useRef<number | null>(null);
   const pendingRef = useRef<
     | null
-    | {
-        id: string;
-        t: number;
-        type: GateType;
-        targets: number[];
-        dx: number;
-        dy: number;
-      }
+    | { id: string; t: number; type: GateType; targets: number[]; dx: number; dy: number }
   >(null);
 
   const startHold = (data: {
-    id: string;
-    t: number;
-    type: GateType;
-    targets: number[];
-    dx: number;
-    dy: number;
+    id: string; t: number; type: GateType; targets: number[]; dx: number; dy: number;
   }) => {
     pendingRef.current = data;
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
@@ -713,8 +663,7 @@ function CircuitSVG({
   const toLocalFromXY = (clientX: number, clientY: number) => {
     const svg = svgRef.current!;
     const pt = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
+    pt.x = clientX; pt.y = clientY;
     const ctm = svg.getScreenCTM();
     const inv = ctm ? ctm.inverse() : null;
     const p = inv ? pt.matrixTransform(inv) : ({ x: 0, y: 0 } as any);
@@ -727,10 +676,7 @@ function CircuitSVG({
   const rafId = useRef<number | null>(null);
   const pendingPx = useRef<{ tx: number; ty: number } | null>(null);
   const flushPx = () => {
-    if (!pendingPx.current) {
-      rafId.current = null;
-      return;
-    }
+    if (!pendingPx.current) { rafId.current = null; return; }
     const px = pendingPx.current;
     setDrag((d: typeof drag) => (d ? { ...d, transformPx: px } : d));
     pendingPx.current = null;
@@ -800,173 +746,142 @@ function CircuitSVG({
   };
 
   const onMouseUpWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (drag) {
-      dropAtLocal(e.clientX, e.clientY);
-      return;
-    }
+    if (drag) { dropAtLocal(e.clientX, e.clientY); return; }
     if (pendingRef.current) cancelHold();
   };
-
   const onMouseMoveWrapper = (e: React.MouseEvent<SVGSVGElement>) => {
     if (drag) { handleDragMove(e.clientX, e.clientY); }
   };
 
   return (
-  <svg
-    ref={svgRef}
-    viewBox={viewBox}
-    width={pxW}
-    height={pxH}
-    style={{ background: T.bg, borderRadius: 12, touchAction: "none", display: "block" }}
-    shapeRendering="geometricPrecision"
-    onClick={(e) => {
-      if ((e.target as Element).tagName === "svg") {
-        cancelHold();
-        onDeselect();
-      }
-    }}
-    onMouseMove={onMouseMoveWrapper}
-    onMouseUp={onMouseUpWrapper}
-  >
-    {/* Qubit labels (stay at x=0) */}
-    {Array.from({ length: wires }).map((_, q) => (
-      <text
-        key={q}
-        x={0}
-        y={q * cellH + cellH / 2 + 5}
-        textAnchor="start"
-        fill={T.label}
-        fontSize={12}
-        style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}
-      >
-        {`q${q}`}
-      </text>
-    ))}
-
-    {/* Everything to the right of the labels is shifted by labelW */}
-    <g transform={`translate(${labelW},0)`}>
-      {/* grid guides (subtle) */}
-      {Array.from({ length: wires + 1 }).map((_, r) => (
-        <line
-          key={r}
-          x1={0}
-          y1={r * cellH}
-          x2={cols * cellW}
-          y2={r * cellH}
-          stroke={T.grid}
-          strokeWidth={1}
-          pointerEvents="none"
-        />
-      ))}
-      {Array.from({ length: cols + 1 }).map((_, c) => (
-        <line
-          key={c}
-          x1={c * cellW}
-          y1={0}
-          x2={c * cellW}
-          y2={wires * cellH}
-          stroke={T.wire}
-          strokeWidth={1}
-          pointerEvents="none"
-        />
-      ))}
-
-      {/* qubit horizontal wires */}
+    <svg
+      ref={svgRef}
+      viewBox={viewBox}
+      width={pxW}
+      height={pxH}
+      style={{ background: T.bg, borderRadius: 12, touchAction: "none", display: "block" }}
+      shapeRendering="geometricPrecision"
+      onClick={(e) => {
+        if ((e.target as Element).tagName === "svg") { cancelHold(); onDeselect(); }
+      }}
+      onMouseMove={onMouseMoveWrapper}
+      onMouseUp={onMouseUpWrapper}
+    >
+      {/* Qubit labels (left strip) */}
       {Array.from({ length: wires }).map((_, q) => (
-        <line
+        <text
           key={q}
-          x1={0}
-          y1={q * cellH + cellH / 2}
-          x2={cols * cellW}
-          y2={q * cellH + cellH / 2}
-          stroke={T.node}
-          strokeWidth={2}
-          pointerEvents="none"
-        />
+          x={0}
+          y={q * cellH + cellH / 2 + 5}
+          textAnchor="start"
+          fill={T.label}
+          fontSize={12}
+          style={{ letterSpacing: ".3px" }}
+        >
+          {`q${q}`}
+        </text>
       ))}
 
-      {/* small wire nodes at each column (like the screenshot) */}
-      {(() => {
-        const dots: JSX.Element[] = [];
-        for (let c = 0; c < cols; c++) {
-          const x = c * cellW + cellW / 2; // center of column
-          for (let q = 0; q < wires; q++) {
-            const y = q * cellH + cellH / 2;
-            dots.push(<circle key={`nd-${c}-${q}`} cx={x} cy={y} r={3} fill="#5b6676" />);
+      {/* Everything to the right is shifted by labelW */}
+      <g transform={`translate(${labelW},0)`}>
+        {/* grid */}
+        {Array.from({ length: wires + 1 }).map((_, r) => (
+          <line key={r} x1={0} y1={r * cellH} x2={cols * cellW} y2={r * cellH} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
+        ))}
+        {Array.from({ length: cols + 1 }).map((_, c) => (
+          <line key={c} x1={c * cellW} y1={0} x2={c * cellW} y2={wires * cellH} stroke={T.grid} strokeWidth={1} pointerEvents="none" />
+        ))}
+
+        {/* wires */}
+        {Array.from({ length: wires }).map((_, q) => (
+          <line
+            key={q}
+            x1={0}
+            y1={q * cellH + cellH / 2}
+            x2={cols * cellW}
+            y2={q * cellH + cellH / 2}
+            stroke={T.wire}
+            strokeWidth={2}
+            pointerEvents="none"
+          />
+        ))}
+
+        {/* nodes (centers of columns) */}
+        {(() => {
+          const dots: JSX.Element[] = [];
+          for (let c = 0; c < cols; c++) {
+            const x = c * cellW + cellW / 2;
+            for (let q = 0; q < wires; q++) {
+              const y = q * cellH + cellH / 2;
+              dots.push(<circle key={`nd-${c}-${q}`} cx={x} cy={y} r={3} fill={T.node} />);
+            }
           }
-        }
-        return <g pointerEvents="none">{dots}</g>;
-      })()}
+          return <g pointerEvents="none">{dots}</g>;
+        })()}
 
-      {/* snap cell highlight while dragging */}
-      {drag && (
-        <g>
-          {(() => {
-            const tx = drag.transformPx?.tx ?? 0;
-            const ty = drag.transformPx?.ty ?? 0;
-            const px = drag.t * cellW + drag.dx + tx;
-            const py = drag.targets[0] * cellH + drag.dy + ty;
-            const c = Math.round((px - drag.dx) / cellW);
-            const r = Math.round((py - drag.dy) / cellH);
-            const x = c * cellW;
-            const y = r * cellH;
-            return (
-              <rect
-                x={x - 2}
-                y={y - 2}
-                width={cellW + 4}
-                height={cellH + 4}
-                fill="none"
-                stroke={T.select}
-                strokeOpacity={0.35}
-                strokeDasharray="6 6"
-                rx={8}
-                ry={8}
+        {/* snap cell highlight while dragging */}
+        {drag && (
+          <g>
+            {(() => {
+              const tx = drag.transformPx?.tx ?? 0;
+              const ty = drag.transformPx?.ty ?? 0;
+              const px = drag.t * cellW + drag.dx + tx;
+              const py = drag.targets[0] * cellH + drag.dy + ty;
+              const c = Math.round((px - drag.dx) / cellW);
+              const r = Math.round((py - drag.dy) / cellH);
+              const x = c * cellW;
+              const y = r * cellH;
+              return (
+                <rect
+                  x={x - 2} y={y - 2}
+                  width={cellW + 4} height={cellH + 4}
+                  fill="none" stroke={T.select}
+                  strokeOpacity={0.35} strokeDasharray="6 6"
+                  rx={8} ry={8}
+                />
+              );
+            })()}
+          </g>
+        )}
+
+        {/* gates */}
+        {circuit.moments.map((m) => (
+          <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
+            {m.gates.map((g) => (
+              <GateSVG
+                key={g.id}
+                t={m.t}
+                gate={g}
+                cellH={cellH}
+                cellW={cellW}
+                colors={T}
+                selected={!!selected && selected.id === g.id && selected.t === m.t}
+                onMouseDown={(evt, dx, dy) => {
+                  evt.stopPropagation();
+                  onSelect(m.t, g.id);
+                  startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+                }}
+                onTouchStart={(evt, dx, dy) => {
+                  onSelect(m.t, g.id);
+                  startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+                }}
+                transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
               />
-            );
-          })()}
-        </g>
-      )}
-
-      {/* gates */}
-      {circuit.moments.map((m) => (
-        <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
-          {m.gates.map((g) => (
-            <GateSVG
-              key={g.id}
-              t={m.t}
-              gate={g}
-              cellH={cellH}
-              cellW={cellW}
-              colors={T}
-              selected={!!selected && selected.id === g.id && selected.t === m.t}
-              onMouseDown={(evt, dx, dy) => {
-                evt.stopPropagation();
-                onSelect(m.t, g.id);
-                startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-              }}
-              onTouchStart={(evt, dx, dy) => {
-                onSelect(m.t, g.id);
-                startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-              }}
-              transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
-            />
-          ))}
-        </g>
-      ))}
-    </g>
-  </svg>
-);
+            ))}
+          </g>
+        ))}
+      </g>
+    </svg>
+  );
 }
 
-// ================= GateSVG (memoized, transform-based preview) =================
-// === GateSVG (screenshot-style chips) ===
+/* =============== GateSVG (theme-aware visuals) =============== */
 const GateSVG = React.memo(function GateSVG({
   t,
   gate,
   cellH,
   cellW,
-  colors,       // this is T
+  colors,       // T
   selected,
   onMouseDown,
   onTouchStart,
@@ -995,14 +910,13 @@ const GateSVG = React.memo(function GateSVG({
     if (t0) onTouchStart(t0, dx, dy);
   };
 
-  // palette from theme
+  // theme palette
   const H_FILL = colors.gates.hFill;
   const H_TEXT = colors.gates.hText;
   const PLUS_STROKE = selected ? colors.select : colors.gates.xStroke;
   const CTRL_FILL = selected ? colors.select : colors.gates.cxControl;
   const MEAS_STROKE = selected ? colors.select : colors.gates.measureStroke;
 
-  // helper
   const drawPlus = (cx: number, cy: number, r: number, sw = 2) => (
     <>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={PLUS_STROKE} strokeWidth={sw} />
@@ -1011,7 +925,7 @@ const GateSVG = React.memo(function GateSVG({
     </>
   );
 
-  // CNOT
+  // CX
   if (gate.type === "CX") {
     const [qc, qt] = gate.targets;
     const cx = xCenter, cyC = yCenter(qc), cyT = yCenter(qt);
@@ -1029,7 +943,7 @@ const GateSVG = React.memo(function GateSVG({
     );
   }
 
-  // Single-qubit gates
+  // Single-qubit
   const q = gate.targets[0];
   const cx = xCenter;
   const cy = yCenter(q);
@@ -1085,7 +999,8 @@ const GateSVG = React.memo(function GateSVG({
 
   return null;
 });
-// ================= Counts & Chart =================
+
+/* ================= Counts & Chart ================= */
 function CountsTable({ counts }: { counts: Record<string, number> }) {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   return (
@@ -1114,7 +1029,15 @@ function BarChart({ probs }: { probs: number[] }) {
   const max = Math.max(1e-9, ...probs);
   const labels = probs.map((_, i) => i.toString(2).padStart(Math.log2(probs.length), "0"));
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${probs.length}, 1fr)`, gap: 6, alignItems: "end", height: 180 }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${probs.length}, 1fr)`,
+        gap: 6,
+        alignItems: "end",
+        height: 180,
+      }}
+    >
       {probs.map((p, i) => (
         <div key={i} title={`${labels[i]}: ${(p * 100).toFixed(2)}%`}>
           <div className="bar" style={{ height: `${(p / max) * 160}px` }} />
