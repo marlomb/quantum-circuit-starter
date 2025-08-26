@@ -497,7 +497,14 @@ export default function App() {
         </div>
       </header>
 
-      <section style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16 }}>
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(280px, 360px) 1fr",
+          gap: 16,
+          width: "100%",           // ensure full width
+        }}
+      >
         {/* Left: Panels */}
         <div className="stack">
           <div className="card">

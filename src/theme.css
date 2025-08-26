@@ -83,3 +83,26 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
 
 /* Bar chart bars */
 .bar { background: #60a5fa; border-radius: 6px; }
+
+/* Full-bleed app wrapper */
+.app-wrap {
+  width: 100%;
+  max-width: none;          /* remove 1200px cap */
+  padding: 16px 24px;
+  min-height: 100vh;        /* take full screen height */
+  box-sizing: border-box;
+}
+
+/* Canvas shell fills the remaining viewport height under the header/controls */
+.canvas-shell {
+  position: relative;
+  height: calc(100vh - 180px);  /* adjust this if your header gets taller/shorter */
+  min-height: 360px;
+  max-height: none;             /* no cap */
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: auto;
+}
+.theme-dark .canvas-shell { border-color: #1e293b; background: #0b1324; }
+.canvas-shell.panning { cursor: grabbing; }
