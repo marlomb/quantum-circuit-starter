@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
+import "./theme.css";
 
 // ================= Quantum math utils =================
 const SQRT1_2 = Math.SQRT1_2;
@@ -320,100 +321,63 @@ export default function App() {
   const T = THEMES[theme];
 
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        background: T.bg,
-        color: T.text,
-        fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
-      }}
-    >
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: 16 }}>
-        <header
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 12,
-          }}
-        >
-          <h1 style={{ fontSize: 20, fontWeight: 700 }}>Quantum Circuit Designer – Starter</h1>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-              Theme: {theme}
-            </button>
-            <label>
-              Qubits
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={circuit.nQubits}
-                onChange={(e) => setQubits(parseInt(e.target.value || "1"))}
-                style={{ width: 64, marginLeft: 6 }}
-              />
-            </label>
-            <label>
-              Shots
-              <input
-                type="number"
-                min={1}
-                max={100000}
-                value={shots}
-                onChange={(e) => setShots(parseInt(e.target.value || "512"))}
-                style={{ width: 92, marginLeft: 6 }}
-              />
-            </label>
-            <label>
-              Padding
-              <input
-                type="range"
-                min={0}
-                max={64}
-                value={padding}
-                onChange={(e) => setPadding(parseInt(e.target.value))}
-              />
-            </label>
-            <label>
-              Aspect
-              <select value={aspect} onChange={(e) => setAspect(e.target.value)}>
-                <option value="auto">auto</option>
-                <option value="16:9">16:9</option>
-                <option value="4:3">4:3</option>
-                <option value="1:1">1:1</option>
-              </select>
-            </label>
-          </div>
-        </header>
+    
+    <div className="neon-bg" style={{ color: T.text, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 16 }}>
+      <header className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <h1 className="h1" style={{ fontSize: 22, fontWeight: 700 }}>Quantum Circuit Designer</h1>
+        <div className="row">
+          <button className="btn btn-ghost" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+            Theme: {theme}
+          </button>
+          <label>
+            Qubits
+            <input className="input" type="number" min={1} max={12} value={circuit.nQubits}
+              onChange={(e) => setQubits(parseInt(e.target.value || "1"))} style={{ width: 64 }} />
+          </label>
+          <label>
+            Shots
+            <input className="input" type="number" min={1} max={100000} value={shots}
+              onChange={(e) => setShots(parseInt(e.target.value || "512"))} style={{ width: 92 }} />
+          </label>
+          <label>
+            Padding
+            <input className="range" type="range" min={0} max={64} value={padding}
+              onChange={(e) => setPadding(parseInt(e.target.value))} />
+          </label>
+          <label>
+            Aspect
+            <select className="select" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+              <option value="auto">auto</option>
+              <option value="16:9">16:9</option>
+              <option value="4:3">4:3</option>
+              <option value="1:1">1:1</option>
+            </select>
+          </label>
+        </div>
+      </header>
 
         <section style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16 }}>
           {/* Left: Controls */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+           <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-                <PaletteButton label="H" onClick={() => addGate("H", 0, circuit.moments.length)} />
-                <PaletteButton label="X" onClick={() => addGate("X", 0, circuit.moments.length)} />
-                <PaletteButton
-                  label="CX"
-                  onClick={() => addGate("CX", 0, circuit.moments.length, 1)}
-                />
-                <PaletteButton
-                  label="M"
-                  onClick={() => addGate("MEASURE", 0, circuit.moments.length)}
-                />
+               <div className="grid-2">
+                <button className="btn btn-primary" onClick={() => addGate("H", 0, circuit.moments.length)}>H</button>
+                <button className="btn btn-primary" onClick={() => addGate("X", 0, circuit.moments.length)}>X</button>
+                <button className="btn btn-primary" onClick={() => addGate("CX", 0, circuit.moments.length, 1)}>CX</button>
+                <button className="btn" onClick={() => addGate("MEASURE", 0, circuit.moments.length)}>M</button>
               </div>
-              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <button onClick={addMoment}>Add time step</button>
-                <button onClick={removeLast}>Undo last</button>
+              <div className="row" style={{ marginTop: 8 }}>
+                <button className="btn btn-ghost" onClick={addMoment}>Add time step</button>
+                <button className="btn btn-ghost" onClick={removeLast}>Undo last</button>
               </div>
               <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
                 Tip: Press & hold a gate, then drag. It follows your pointer smoothly and snaps on drop.
               </p>
             </div>
 
-            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Selection</h3>
               <button onClick={deleteSelectedGate} disabled={!selected}>
                 Delete selected gate
@@ -423,25 +387,25 @@ export default function App() {
               )}
             </div>
 
-            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Export</h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-                <button onClick={downloadSVG}>Download SVG</button>
-                <button onClick={downloadPNG}>Download PNG</button>
-                <button onClick={downloadJPG}>Download JPG</button>
-                <button onClick={downloadPDF}>Download PDF</button>
+               <div className="grid-2">
+                <button className="btn" onClick={downloadSVG}>Download SVG</button>
+                <button className="btn" onClick={downloadPNG}>Download PNG</button>
+                <button className="btn" onClick={downloadJPG}>Download JPG</button>
+                <button className="btn" onClick={downloadPDF}>Download PDF</button>
               </div>
             </div>
 
-            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Measurement (shots)</h3>
               <CountsTable counts={counts} />
             </div>
           </div>
 
           {/* Right: Canvas + Probs */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+          <div className="card" style={{ padding: 12 }}>
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>Circuit</h3>
               <CircuitSVG
                 circuit={circuit}
@@ -458,7 +422,7 @@ export default function App() {
               />
             </div>
 
-            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+            <div className="card" style={{ padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>State Probabilities</h3>
               <BarChart probs={probs} />
             </div>
@@ -470,11 +434,7 @@ export default function App() {
 }
 
 function PaletteButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button onClick={onClick} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-      {label}
-    </button>
-  );
+  return <button className="btn btn-primary" onClick={onClick}>{label}</button>;
 }
 
 // ================= CircuitSVG (press-and-hold + smooth drag) =================
@@ -709,7 +669,7 @@ function CircuitSVG({
       <g transform={`translate(${padding}, ${padding})`}>
         {/* qubit labels */}
         {Array.from({ length: wires }).map((_, q) => (
-          <text key={q} x={0} y={q * cellH + cellH / 2 + 5} textAnchor="start" fill={T.label} fontSize={12}>
+          <text key={q} x={0} y={q * cellH + cellH / 2 + 5} textAnchor="start" fill={T.label} fontSize={12} style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}>
             {`q${q}`}
           </text>
         ))}
@@ -835,7 +795,7 @@ const GateSVG = React.memo(function GateSVG({
     const yT = yCenter(cIdx + diff);
 
     return (
-      <g
+      <g className={selected ? "glow-strong" : "glow-soft"}
         transform={`translate(${tx}, ${ty})`}
         style={{ cursor: "grab", willChange: "transform" }}
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
@@ -860,7 +820,7 @@ const GateSVG = React.memo(function GateSVG({
   const label = GATE_LABEL[gate.type];
 
   return (
-    <g
+    <g  className={selected ? "glow-strong" : "glow-soft"}
       transform={`translate(${tx}, ${ty})`}
       style={{ cursor: "grab", willChange: "transform" }}
       onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
@@ -928,7 +888,7 @@ function BarChart({ probs }: { probs: number[] }) {
     >
       {probs.map((p, i) => (
         <div key={i} title={`${labels[i]}: ${(p * 100).toFixed(2)}%`}>
-          <div style={{ height: `${(p / max) * 160}px`, background: "#60a5fa", borderRadius: 6 }} />
+          <div className="bar" style={{ height: `${(p / max) * 160}px` }} />
           <div style={{ textAlign: "center", fontSize: 12, marginTop: 4 }}>{labels[i]}</div>
         </div>
       ))}
