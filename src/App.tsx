@@ -798,140 +798,155 @@ function CircuitSVG({
   };
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={viewBox}
-      width={pxW}
-      height={pxH}
-      style={{ background: T.bg, borderRadius: 12, touchAction: "none", display: "block" }}
-      shapeRendering="geometricPrecision"
-      onClick={(e) => {
-        if ((e.target as Element).tagName === "svg") {
-          cancelHold();
-          onDeselect();
-        }
-      }}
-      onMouseMove={onMouseMoveWrapper}
-      onMouseUp={onMouseUpWrapper}
-    >
-      {/* Qubit labels */}
-      {Array.from({ length: wires }).map((_, q) => (
-        <text
-          key={q}
-          x={0}
-          y={q * cellH + cellH / 2 + 5}
-          textAnchor="start"
-          fill={T.label}
-          fontSize={12}
-          style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}
-        >
-          {`q${q}`}
-        </text>
+  <svg
+    ref={svgRef}
+    viewBox={viewBox}
+    width={pxW}
+    height={pxH}
+    style={{ background: T.bg, borderRadius: 12, touchAction: "none", display: "block" }}
+    shapeRendering="geometricPrecision"
+    onClick={(e) => {
+      if ((e.target as Element).tagName === "svg") {
+        cancelHold();
+        onDeselect();
+      }
+    }}
+    onMouseMove={onMouseMoveWrapper}
+    onMouseUp={onMouseUpWrapper}
+  >
+    {/* Qubit labels (stay at x=0) */}
+    {Array.from({ length: wires }).map((_, q) => (
+      <text
+        key={q}
+        x={0}
+        y={q * cellH + cellH / 2 + 5}
+        textAnchor="start"
+        fill={T.label}
+        fontSize={12}
+        style={{ fontFamily: "Orbitron, ui-sans-serif", letterSpacing: ".5px" }}
+      >
+        {`q${q}`}
+      </text>
+    ))}
+
+    {/* Everything to the right of the labels is shifted by labelW */}
+    <g transform={`translate(${labelW},0)`}>
+      {/* grid guides (subtle) */}
+      {Array.from({ length: wires + 1 }).map((_, r) => (
+        <line
+          key={r}
+          x1={0}
+          y1={r * cellH}
+          x2={cols * cellW}
+          y2={r * cellH}
+          stroke="#29303a"
+          strokeWidth={1}
+          pointerEvents="none"
+        />
+      ))}
+      {Array.from({ length: cols + 1 }).map((_, c) => (
+        <line
+          key={c}
+          x1={c * cellW}
+          y1={0}
+          x2={c * cellW}
+          y2={wires * cellH}
+          stroke="#29303a"
+          strokeWidth={1}
+          pointerEvents="none"
+        />
       ))}
 
-      {/* Grid + wires + gates */}
-      <g transform={`translate(${labelW},0)`}>
-        {/* grid */}
-        {Array.from({ length: wires + 1 }).map((_, r) => (
-          <line
-            key={r}
-            x1={0}
-            y1={r * cellH}
-            x2={cols * cellW}
-            y2={r * cellH}
-            stroke={T.grid}
-            strokeWidth={1}
-            pointerEvents="none"
-          />
-        ))}
-        {Array.from({ length: cols + 1 }).map((_, c) => (
-          <line
-            key={c}
-            x1={c * cellW}
-            y1={0}
-            x2={c * cellW}
-            y2={wires * cellH}
-            stroke={T.grid}
-            strokeWidth={1}
-            pointerEvents="none"
-          />
-        ))}
-        {/* wires */}
-        {Array.from({ length: wires }).map((_, q) => (
-          <line
-            key={q}
-            x1={0}
-            y1={q * cellH + cellH / 2}
-            x2={cols * cellW}
-            y2={q * cellH + cellH / 2}
-            stroke={T.wire}
-            strokeWidth={2}
-            pointerEvents="none"
-          />
-        ))}
+      {/* qubit horizontal wires */}
+      {Array.from({ length: wires }).map((_, q) => (
+        <line
+          key={q}
+          x1={0}
+          y1={q * cellH + cellH / 2}
+          x2={cols * cellW}
+          y2={q * cellH + cellH / 2}
+          stroke="#5b6676"
+          strokeWidth={2}
+          pointerEvents="none"
+        />
+      ))}
 
-        {/* snap cell highlight while dragging */}
-        {drag && (
-          <g>
-            {(() => {
-              const tx = drag.transformPx?.tx ?? 0;
-              const ty = drag.transformPx?.ty ?? 0;
-              const px = drag.t * cellW + drag.dx + tx;
-              const py = drag.targets[0] * cellH + drag.dy + ty;
-              const c = Math.round((px - drag.dx) / cellW);
-              const r = Math.round((py - drag.dy) / cellH);
-              const x = c * cellW;
-              const y = r * cellH;
-              return (
-                <rect
-                  x={x - 2}
-                  y={y - 2}
-                  width={cellW + 4}
-                  height={cellH + 4}
-                  fill="none"
-                  stroke={T.select}
-                  strokeOpacity={0.35}
-                  strokeDasharray="6 6"
-                  rx={8}
-                  ry={8}
-                />
-              );
-            })()}
-          </g>
-        )}
+      {/* small wire nodes at each column (like the screenshot) */}
+      {(() => {
+        const dots: JSX.Element[] = [];
+        for (let c = 0; c < cols; c++) {
+          const x = c * cellW + cellW / 2; // center of column
+          for (let q = 0; q < wires; q++) {
+            const y = q * cellH + cellH / 2;
+            dots.push(<circle key={`nd-${c}-${q}`} cx={x} cy={y} r={3} fill="#5b6676" />);
+          }
+        }
+        return <g pointerEvents="none">{dots}</g>;
+      })()}
 
-        {/* gates */}
-        {circuit.moments.map((m) => (
-          <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
-            {m.gates.map((g) => (
-              <GateSVG
-                key={g.id}
-                t={m.t}
-                gate={g}
-                cellH={cellH}
-                cellW={cellW}
-                colors={T}
-                selected={!!selected && selected.id === g.id && selected.t === m.t}
-                onMouseDown={(evt, dx, dy) => {
-                  evt.stopPropagation();
-                  onSelect(m.t, g.id);
-                  startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-                }}
-                onTouchStart={(evt, dx, dy) => {
-                  onSelect(m.t, g.id);
-                  startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
-                }}
-                transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
+      {/* snap cell highlight while dragging */}
+      {drag && (
+        <g>
+          {(() => {
+            const tx = drag.transformPx?.tx ?? 0;
+            const ty = drag.transformPx?.ty ?? 0;
+            const px = drag.t * cellW + drag.dx + tx;
+            const py = drag.targets[0] * cellH + drag.dy + ty;
+            const c = Math.round((px - drag.dx) / cellW);
+            const r = Math.round((py - drag.dy) / cellH);
+            const x = c * cellW;
+            const y = r * cellH;
+            return (
+              <rect
+                x={x - 2}
+                y={y - 2}
+                width={cellW + 4}
+                height={cellH + 4}
+                fill="none"
+                stroke={T.select}
+                strokeOpacity={0.35}
+                strokeDasharray="6 6"
+                rx={8}
+                ry={8}
               />
-            ))}
-          </g>
-        ))}
-      </g>
-    </svg>
-  );
+            );
+          })()}
+        </g>
+      )}
+
+      {/* gates */}
+      {circuit.moments.map((m) => (
+        <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
+          {m.gates.map((g) => (
+            <GateSVG
+              key={g.id}
+              t={m.t}
+              gate={g}
+              cellH={cellH}
+              cellW={cellW}
+              colors={T}
+              selected={!!selected && selected.id === g.id && selected.t === m.t}
+              onMouseDown={(evt, dx, dy) => {
+                evt.stopPropagation();
+                onSelect(m.t, g.id);
+                startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+              }}
+              onTouchStart={(evt, dx, dy) => {
+                onSelect(m.t, g.id);
+                startHold({ id: g.id, t: m.t, type: g.type, targets: [...g.targets], dx, dy });
+              }}
+              transformPx={drag && drag.id === g.id ? drag.transformPx : undefined}
+            />
+          ))}
+        </g>
+      ))}
+    </g>
+  </svg>
+);
 }
 
 // ================= GateSVG (memoized, transform-based preview) =================
+// === GateSVG (screenshot-style chips) ===
 const GateSVG = React.memo(function GateSVG({
   t,
   gate,
@@ -953,19 +968,18 @@ const GateSVG = React.memo(function GateSVG({
   onTouchStart?: (touch: Touch, dx: number, dy: number) => void;
   transformPx?: { tx: number; ty: number };
 }) {
-  const yCenter = (q: number) => q * cellH + cellH / 2;
   const xCenter = cellW / 2;
-
-  const q = gate.targets[0];
-  const x = xCenter - 20;
-  const y = q * cellH + cellH / 2 - 16;
-  const w = 40, h = 32;
-
-  const gateStroke = selected ? colors.select : "#1aff66"; // glowing PCB green
-  const chipFill = "#111"; // dark chip body
+  const yCenter = (q: number) => q * cellH + cellH / 2;
 
   const tx = transformPx?.tx ?? 0;
   const ty = transformPx?.ty ?? 0;
+
+  // Palette tuned to your screenshot
+  const blue = "#4f7ff0";
+  const blueStroke = selected ? colors.select : blue;
+  const red = "#e15656";
+  const wireStroke = "#5b6676";
+  const textColor = "#e6eef9";
 
   const handleMouseDown = (evt: React.MouseEvent, dx = 0, dy = 0) => onMouseDown(evt, dx, dy);
   const handleTouchStart = (evt: React.TouchEvent, dx = 0, dy = 0) => {
@@ -974,70 +988,104 @@ const GateSVG = React.memo(function GateSVG({
     if (t0) onTouchStart(t0, dx, dy);
   };
 
-  return (
-    <g
-      transform={`translate(${tx},${ty})`}
-      style={{ cursor: "grab", willChange: "transform" }}
-      onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
-      onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
-    >
-      {/* Glow filter */}
-      <defs>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor={gateStroke} floodOpacity="0.8"/>
-        </filter>
-      </defs>
-
-      {/* Gate background chip */}
-      <rect
-        x={x}
-        y={y}
-        width={w}
-        height={h}
-        rx={6}
-        ry={6}
-        fill={chipFill}
-        stroke={gateStroke}
-        strokeWidth={selected ? 3 : 2}
-        filter="url(#glow)"
-      />
-
-      {/* Pins (gold solder pads) */}
-      <circle cx={x - 4} y={y + h/4} r={2} fill="#ffb300"/>
-      <circle cx={x - 4} y={y + (3*h)/4} r={2} fill="#ffb300"/>
-      <circle cx={x + w + 4} y={y + h/4} r={2} fill="#ffb300"/>
-      <circle cx={x + w + 4} y={y + (3*h)/4} r={2} fill="#ffb300"/>
-
-      {/* Gate symbol (custom per type) */}
-      {gate.type === "H" && (
-        <line x1={x+6} y1={y+6} x2={x+w-6} y2={y+h-6} stroke={gateStroke} strokeWidth={2}/>
-      )}
-      {gate.type === "X" && (
-        <>
-          <polygon
-            points={`${x+6},${y+4} ${x+w-6},${y+h/2} ${x+6},${y+h-4}`}
-            fill="none"
-            stroke={gateStroke}
-            strokeWidth={2}
-          />
-          <circle cx={x+w-2} cy={y+h/2} r={4} fill="none" stroke={gateStroke} strokeWidth={2}/>
-        </>
-      )}
-      {gate.type === "CX" && (
-        <>
-          <circle cx={x+10} cy={y+h/2} r={5} fill={gateStroke}/>
-          <path d={`M${x+18},${y+4} A10,10 0 1,1 ${x+18},${y+h-4}`} fill="none" stroke={gateStroke} strokeWidth={2}/>
-          <line x1={x+18} y1={y+4} x2={x+18} y2={y+h-4} stroke={gateStroke} strokeWidth={2}/>
-        </>
-      )}
-      {gate.type === "MEASURE" && (
-        <>
-          <rect x={x+6} y={y+6} width={w-12} height={h-12} rx={3} ry={3} stroke={gateStroke} fill="none"/>
-          <path d={`M${x+10},${y+h-10} q10,-12 20,0`} stroke={gateStroke} fill="none" strokeWidth={2}/>
-        </>
-      )}
-    </g>
+  // ------- Helpers for drawing -------
+  const drawPlus = (cx: number, cy: number, r: number, sw = 2) => (
+    <>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={blueStroke} strokeWidth={sw} />
+      <line x1={cx - r * 0.55} y1={cy} x2={cx + r * 0.55} y2={cy} stroke={blueStroke} strokeWidth={sw} />
+      <line x1={cx} y1={cy - r * 0.55} x2={cx} y2={cy + r * 0.55} stroke={blueStroke} strokeWidth={sw} />
+    </>
   );
+
+  // ------- CNOT (control •, target ⊕) -------
+  if (gate.type === "CX") {
+    const [qc, qt] = gate.targets;
+    const cx = xCenter, cyC = yCenter(qc), cyT = yCenter(qt);
+    const radius = 13;
+
+    return (
+      <g
+        transform={`translate(${tx}, ${ty})`}
+        style={{ cursor: "grab", willChange: "transform" }}
+        onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
+        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
+      >
+        {/* fatter invisible hit line for easy grabbing */}
+        <line x1={cx} y1={cyC} x2={cx} y2={cyT} stroke="transparent" strokeWidth={18} pointerEvents="stroke" />
+
+        {/* actual link */}
+        <line x1={cx} y1={cyC} x2={cx} y2={cyT} stroke={wireStroke} strokeWidth={2} />
+
+        {/* control dot */}
+        <circle cx={cx} cy={cyC} r={4.5} fill={blueStroke} />
+
+        {/* target + in circle */}
+        {drawPlus(cx, cyT, radius, selected ? 3 : 2)}
+      </g>
+    );
+  }
+
+  // ------- Single-qubit gates -------
+  const q = gate.targets[0];
+  const cx = xCenter;
+  const cy = yCenter(q);
+
+  if (gate.type === "X") {
+    // NOT as a ⊕ circle (screenshot look)
+    return (
+      <g
+        transform={`translate(${tx}, ${ty})`}
+        style={{ cursor: "grab", willChange: "transform" }}
+        onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
+        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
+      >
+        {/* larger grab area */}
+        <circle cx={cx} cy={cy} r={18} fill="transparent" stroke="transparent" strokeWidth={18} pointerEvents="all" />
+        {drawPlus(cx, cy, 13, selected ? 3 : 2)}
+      </g>
+    );
+  }
+
+  if (gate.type === "H") {
+    // red square with "H"
+    const w = 28, h = 28;
+    const x = cx - w / 2, y = cy - h / 2;
+    return (
+      <g
+        transform={`translate(${tx}, ${ty})`}
+        style={{ cursor: "grab", willChange: "transform" }}
+        onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
+        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
+      >
+        <rect x={x} y={y} width={w} height={h} rx={4} ry={4}
+          fill={red} stroke={selected ? colors.select : red} strokeWidth={selected ? 3 : 2} />
+        <text x={cx} y={cy + 6} fontSize={16} textAnchor="middle" fill={textColor} style={{ fontWeight: 700 }}>
+          H
+        </text>
+      </g>
+    );
+  }
+
+  if (gate.type === "MEASURE") {
+    // small oscilloscope box
+    const w = 30, h = 22;
+    const x = cx - w / 2, y = cy - h / 2;
+    const stroke = selected ? colors.select : "#aab2bf";
+    return (
+      <g
+        transform={`translate(${tx}, ${ty})`}
+        style={{ cursor: "grab", willChange: "transform" }}
+        onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
+        onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
+      >
+        <rect x={x} y={y} width={w} height={h} rx={4} ry={4} fill="none" stroke={stroke} strokeWidth={selected ? 3 : 2} />
+        <path d={`M ${x + 4} ${cy + 6} q 6 -16 12 0 q 6 16 12 0`} fill="none" stroke={stroke} strokeWidth={2} />
+      </g>
+    );
+  }
+
+  // fallback (shouldn’t hit)
+  return null;
 });
 
 // ================= Counts & Chart =================
