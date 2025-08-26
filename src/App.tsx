@@ -1,14 +1,12 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
 
 // Quantum Circuit Designer – Starter (pure React + SVG)
-// Strict TypeScript ready: removed unused params, relaxed refs, cleaned types
-// Features:
-// - Place gates (H, X, CX, Measure)
-// - Live simulation (statevector → probabilities + shots)
-// - Export: SVG, PNG, JPG, PDF
-// - Image controls: theme, padding, aspect ratio
+// Upgrades:
+// - Select any gate by clicking it (highlighted)
+// - Delete selected gate via button or keyboard (Delete / Backspace)
+// - Strict TypeScript safe
 
 // ---------------- Quantum math utils ----------------
 const SQRT1_2 = Math.SQRT1_2; // 1/sqrt(2)
@@ -107,6 +105,7 @@ function sampleCounts(probs: number[], shots: number): Record<string, number> {
 }
 
 // ---------------- Circuit model ----------------
+
 type GateType = "H" | "X" | "CX" | "MEASURE";
 
 type Gate = {
@@ -155,6 +154,7 @@ const THEMES = {
     wire: "#9ca3af",
     gate: "#111827",
     text: "#111827",
+    select: "#10b981",
   },
   dark: {
     bg: "#0b1118",
@@ -162,6 +162,7 @@ const THEMES = {
     wire: "#6b7280",
     gate: "#e5e7eb",
     text: "#e5e7eb",
+    select: "#34d399",
   },
 };
 
@@ -174,6 +175,7 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeKey>("light");
   const [padding, setPadding] = useState(24);
   const [aspect, setAspect] = useState("auto"); // auto, 16:9, 4:3, 1:1
+  const [selected, setSelected] = useState<{ t: number; id: string } | null>(null);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -214,7 +216,32 @@ export default function App() {
   const setQubits = (n: number) => {
     const nClamped = Math.max(1, Math.min(6, n));
     setCircuit(() => emptyCircuit(nClamped));
+    setSelected(null);
   };
+
+  const deleteSelectedGate = () => {
+    if (!selected) return;
+    setCircuit((c) => {
+      const ms = c.moments.map((m) =>
+        m.t === selected.t ? { ...m, gates: m.gates.filter((g) => g.id !== selected.id) } : m
+      );
+      return { ...c, moments: ms };
+    });
+    setSelected(null);
+  };
+
+  // keyboard: Delete / Backspace removes selected gate
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!selected) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteSelectedGate();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
 
   const { probs, counts } = useMemo(() => {
     const { probs } = simulateCircuit(circuit);
@@ -359,8 +386,16 @@ export default function App() {
                 <button onClick={removeLast}>Undo last</button>
               </div>
               <p style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                Tip: Gate buttons place onto a new time step. Multi-qubit gates use qubits 0 and 1 by default in this starter.
+                Tip: Click a gate to select it. Press <kbd>Delete</kbd>/<kbd>Backspace</kbd> or use the button below to remove it.
               </p>
+            </div>
+
+            <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
+              <h3 style={{ marginTop: 0 }}>Selection</h3>
+              <button onClick={deleteSelectedGate} disabled={!selected}>
+                Delete selected gate
+              </button>
+              {!selected && <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>No gate selected</p>}
             </div>
 
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
@@ -383,7 +418,16 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
               <h3 style={{ marginTop: 0 }}>Circuit</h3>
-              <CircuitSVG circuit={circuit} padding={padding} themeKey={theme} aspect={aspect} svgRef={svgRef} />
+              <CircuitSVG
+                circuit={circuit}
+                padding={padding}
+                themeKey={theme}
+                aspect={aspect}
+                svgRef={svgRef}
+                selected={selected}
+                onDeselect={() => setSelected(null)}
+                onSelect={(t, id) => setSelected({ t, id })}
+              />
             </div>
 
             <div style={{ padding: 12, border: `1px solid ${T.grid}`, borderRadius: 12 }}>
@@ -411,12 +455,18 @@ function CircuitSVG({
   themeKey,
   aspect,
   svgRef,
+  selected,
+  onDeselect,
+  onSelect,
 }: {
   circuit: Circuit;
   padding: number;
   themeKey: ThemeKey;
   aspect: string;
   svgRef: React.RefObject<SVGSVGElement | null>;
+  selected: { t: number; id: string } | null;
+  onDeselect: () => void;
+  onSelect: (t: number, id: string) => void;
 }) {
   const T = THEMES[themeKey];
   const cellW = 72;
@@ -436,7 +486,16 @@ function CircuitSVG({
   }, [width, height, aspect]);
 
   return (
-    <svg ref={svgRef} viewBox={viewBox} width="100%" style={{ background: T.bg, borderRadius: 12 }}>
+    <svg
+      ref={svgRef}
+      viewBox={viewBox}
+      width="100%"
+      style={{ background: T.bg, borderRadius: 12 }}
+      onClick={(e) => {
+        // clicking the empty canvas deselects
+        if ((e.target as HTMLElement).tagName === "svg") onDeselect();
+      }}
+    >
       <g transform={`translate(${padding}, ${padding})`}>
         {/* grid */}
         {[...Array(wires + 1)].map((_, r) => (
@@ -461,7 +520,15 @@ function CircuitSVG({
         {circuit.moments.map((m) => (
           <g key={m.t} transform={`translate(${m.t * cellW},0)`}>
             {m.gates.map((g) => (
-              <GateSVG key={g.id} gate={g} cellH={cellH} cellW={cellW} colors={T} />
+              <GateSVG
+                key={g.id}
+                gate={g}
+                cellH={cellH}
+                cellW={cellW}
+                colors={T}
+                selected={!!selected && selected.id === g.id && selected.t === m.t}
+                onClick={() => onSelect(m.t, g.id)}
+              />
             ))}
           </g>
         ))}
@@ -470,10 +537,25 @@ function CircuitSVG({
   );
 }
 
-function GateSVG({ gate, cellH, cellW, colors }: { gate: Gate; cellH: number; cellW: number; colors: any }) {
+function GateSVG({
+  gate,
+  cellH,
+  cellW,
+  colors,
+  selected,
+  onClick,
+}: {
+  gate: Gate;
+  cellH: number;
+  cellW: number;
+  colors: any;
+  selected: boolean;
+  onClick: () => void;
+}) {
   const yCenter = (q: number) => q * cellH + cellH / 2;
   const xCenter = cellW / 2;
   const gateColor = colors.gate;
+  const selColor = colors.select;
 
   if (gate.type === "CX") {
     const [cIdx, tIdx] = gate.targets;
@@ -481,14 +563,14 @@ function GateSVG({ gate, cellH, cellW, colors }: { gate: Gate; cellH: number; ce
     const yC = yCenter(cIdx);
     const yT = yCenter(tIdx);
     return (
-      <g>
-        <line x1={x} y1={yC} x2={x} y2={yT} stroke={gateColor} strokeWidth={2} />
+      <g onClick={(e) => { e.stopPropagation(); onClick(); }} style={{ cursor: "pointer" }}>
+        <line x1={x} y1={yC} x2={x} y2={yT} stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
         {/* control dot */}
-        <circle cx={x} cy={yC} r={6} fill={gateColor} />
+        <circle cx={x} cy={yC} r={6} fill={selected ? selColor : gateColor} />
         {/* target plus */}
-        <circle cx={x} cy={yT} r={12} fill="none" stroke={gateColor} strokeWidth={2} />
-        <line x1={x - 8} y1={yT} x2={x + 8} y2={yT} stroke={gateColor} strokeWidth={2} />
-        <line x1={x} y1={yT - 8} x2={x} y2={yT + 8} stroke={gateColor} strokeWidth={2} />
+        <circle cx={x} cy={yT} r={12} fill="none" stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
+        <line x1={x - 8} y1={yT} x2={x + 8} y2={yT} stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
+        <line x1={x} y1={yT - 8} x2={x} y2={yT + 8} stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
       </g>
     );
   }
@@ -500,9 +582,12 @@ function GateSVG({ gate, cellH, cellW, colors }: { gate: Gate; cellH: number; ce
   const h = 32;
   const label = GATE_LABEL[gate.type];
   return (
-    <g>
-      <rect x={x} y={y} width={w} height={h} rx={8} ry={8} fill="none" stroke={gateColor} strokeWidth={2} />
-      <text x={x + w / 2} y={y + h / 2 + 5} fontSize={16} textAnchor="middle" fill={gateColor}>
+    <g onClick={(e) => { e.stopPropagation(); onClick(); }} style={{ cursor: "pointer" }}>
+      {selected && (
+        <rect x={x - 4} y={y - 4} width={w + 8} height={h + 8} rx={10} ry={10} fill="none" stroke={selColor} strokeWidth={2} />
+      )}
+      <rect x={x} y={y} width={w} height={h} rx={8} ry={8} fill="none" stroke={selected ? selColor : gateColor} strokeWidth={selected ? 3 : 2} />
+      <text x={x + w / 2} y={y + h / 2 + 5} fontSize={16} textAnchor="middle" fill={selected ? selColor : gateColor}>
         {label}
       </text>
     </g>
