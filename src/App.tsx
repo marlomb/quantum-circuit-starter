@@ -360,7 +360,7 @@ export default function App() {
         <section className="responsive-grid" style={{ display: "grid", gap: 16 }}>
           {/* Left: Controls */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-           <div className="card" style={{ padding: 12 }}>
+           <div className="stack">
               <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
                <div className="grid-2">
                 <button className="btn btn-primary" onClick={() => addGate("H", 0, circuit.moments.length)}>H</button>
@@ -377,7 +377,7 @@ export default function App() {
               </p>
             </div>
 
-            <div className="card" style={{ padding: 12 }}>
+            <div className="stack">
               <h3 style={{ marginTop: 0 }}>Selection</h3>
               <button onClick={deleteSelectedGate} disabled={!selected}>
                 Delete selected gate
