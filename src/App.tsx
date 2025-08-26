@@ -135,22 +135,36 @@ const GATE_LABEL: Record<GateType, string> = {
 
 const THEMES = {
   light: {
-    bg: "rgba(255,255,255,0.02)",
-    grid: "rgba(255,255,255,0.10)",
-    wire: "rgba(255,255,255,0.35)",
-    gate: "#e6eef9",
-    text: "#e6eef9",
-    select: "#53d7f0",
-    label: "#a4b2cc",
+    bg: "#ffffff",
+    grid: "#e5e7eb",
+    wire: "#9ca3af",
+    node: "#6b7280",
+    text: "#1f2937",
+    label: "#6b7280",
+    select: "#14b8a6",
+    gates: {
+      hFill: "#ef4444",      // H red
+      hText: "#ffffff",
+      xStroke: "#3b82f6",    // ⊕ blue (X and CNOT target)
+      cxControl: "#3b82f6",  // control dot
+      measureStroke: "#6b7280",
+    },
   },
   dark: {
-    bg: "rgba(255,255,255,0.02)",
-    grid: "rgba(255,255,255,0.10)",
-    wire: "rgba(255,255,255,0.35)",
-    gate: "#e6eef9",
-    text: "#e6eef9",
-    select: "#53d7f0",
-    label: "#a4b2cc",
+    bg: "#0f172a",
+    grid: "#1e293b",
+    wire: "#64748b",
+    node: "#94a3b8",
+    text: "#f8fafc",
+    label: "#94a3b8",
+    select: "#22d3ee",
+    gates: {
+      hFill: "#ef4444",
+      hText: "#ffffff",
+      xStroke: "#60a5fa",
+      cxControl: "#60a5fa",
+      measureStroke: "#cbd5e1",
+    },
   },
 };
 type ThemeKey = keyof typeof THEMES;
@@ -839,7 +853,7 @@ function CircuitSVG({
           y1={r * cellH}
           x2={cols * cellW}
           y2={r * cellH}
-          stroke="#29303a"
+          stroke={T.grid}
           strokeWidth={1}
           pointerEvents="none"
         />
@@ -851,7 +865,7 @@ function CircuitSVG({
           y1={0}
           x2={c * cellW}
           y2={wires * cellH}
-          stroke="#29303a"
+          stroke={T.wire}
           strokeWidth={1}
           pointerEvents="none"
         />
@@ -865,7 +879,7 @@ function CircuitSVG({
           y1={q * cellH + cellH / 2}
           x2={cols * cellW}
           y2={q * cellH + cellH / 2}
-          stroke="#5b6676"
+          stroke={T.node}
           strokeWidth={2}
           pointerEvents="none"
         />
@@ -952,7 +966,7 @@ const GateSVG = React.memo(function GateSVG({
   gate,
   cellH,
   cellW,
-  colors,
+  colors,       // this is T
   selected,
   onMouseDown,
   onTouchStart,
@@ -962,7 +976,7 @@ const GateSVG = React.memo(function GateSVG({
   gate: Gate;
   cellH: number;
   cellW: number;
-  colors: any;
+  colors: any;  // T
   selected: boolean;
   onMouseDown: (evt: React.MouseEvent, dx: number, dy: number) => void;
   onTouchStart?: (touch: Touch, dx: number, dy: number) => void;
@@ -974,13 +988,6 @@ const GateSVG = React.memo(function GateSVG({
   const tx = transformPx?.tx ?? 0;
   const ty = transformPx?.ty ?? 0;
 
-  // Palette tuned to your screenshot
-  const blue = "#4f7ff0";
-  const blueStroke = selected ? colors.select : blue;
-  const red = "#e15656";
-  const wireStroke = "#5b6676";
-  const textColor = "#e6eef9";
-
   const handleMouseDown = (evt: React.MouseEvent, dx = 0, dy = 0) => onMouseDown(evt, dx, dy);
   const handleTouchStart = (evt: React.TouchEvent, dx = 0, dy = 0) => {
     if (!onTouchStart) return;
@@ -988,21 +995,26 @@ const GateSVG = React.memo(function GateSVG({
     if (t0) onTouchStart(t0, dx, dy);
   };
 
-  // ------- Helpers for drawing -------
+  // palette from theme
+  const H_FILL = colors.gates.hFill;
+  const H_TEXT = colors.gates.hText;
+  const PLUS_STROKE = selected ? colors.select : colors.gates.xStroke;
+  const CTRL_FILL = selected ? colors.select : colors.gates.cxControl;
+  const MEAS_STROKE = selected ? colors.select : colors.gates.measureStroke;
+
+  // helper
   const drawPlus = (cx: number, cy: number, r: number, sw = 2) => (
     <>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={blueStroke} strokeWidth={sw} />
-      <line x1={cx - r * 0.55} y1={cy} x2={cx + r * 0.55} y2={cy} stroke={blueStroke} strokeWidth={sw} />
-      <line x1={cx} y1={cy - r * 0.55} x2={cx} y2={cy + r * 0.55} stroke={blueStroke} strokeWidth={sw} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={PLUS_STROKE} strokeWidth={sw} />
+      <line x1={cx - r * 0.55} y1={cy} x2={cx + r * 0.55} y2={cy} stroke={PLUS_STROKE} strokeWidth={sw} />
+      <line x1={cx} y1={cy - r * 0.55} x2={cx} y2={cy + r * 0.55} stroke={PLUS_STROKE} strokeWidth={sw} />
     </>
   );
 
-  // ------- CNOT (control •, target ⊕) -------
+  // CNOT
   if (gate.type === "CX") {
     const [qc, qt] = gate.targets;
     const cx = xCenter, cyC = yCenter(qc), cyT = yCenter(qt);
-    const radius = 13;
-
     return (
       <g
         transform={`translate(${tx}, ${ty})`}
@@ -1010,28 +1022,19 @@ const GateSVG = React.memo(function GateSVG({
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
         onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
       >
-        {/* fatter invisible hit line for easy grabbing */}
-        <line x1={cx} y1={cyC} x2={cx} y2={cyT} stroke="transparent" strokeWidth={18} pointerEvents="stroke" />
-
-        {/* actual link */}
-        <line x1={cx} y1={cyC} x2={cx} y2={cyT} stroke={wireStroke} strokeWidth={2} />
-
-        {/* control dot */}
-        <circle cx={cx} cy={cyC} r={4.5} fill={blueStroke} />
-
-        {/* target + in circle */}
-        {drawPlus(cx, cyT, radius, selected ? 3 : 2)}
+        <line x1={cx} y1={cyC} x2={cx} y2={cyT} stroke={colors.wire} strokeWidth={2} />
+        <circle cx={cx} cy={cyC} r={4.5} fill={CTRL_FILL} />
+        {drawPlus(cx, cyT, 13, selected ? 3 : 2)}
       </g>
     );
   }
 
-  // ------- Single-qubit gates -------
+  // Single-qubit gates
   const q = gate.targets[0];
   const cx = xCenter;
   const cy = yCenter(q);
 
   if (gate.type === "X") {
-    // NOT as a ⊕ circle (screenshot look)
     return (
       <g
         transform={`translate(${tx}, ${ty})`}
@@ -1039,7 +1042,6 @@ const GateSVG = React.memo(function GateSVG({
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
         onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
       >
-        {/* larger grab area */}
         <circle cx={cx} cy={cy} r={18} fill="transparent" stroke="transparent" strokeWidth={18} pointerEvents="all" />
         {drawPlus(cx, cy, 13, selected ? 3 : 2)}
       </g>
@@ -1047,7 +1049,6 @@ const GateSVG = React.memo(function GateSVG({
   }
 
   if (gate.type === "H") {
-    // red square with "H"
     const w = 28, h = 28;
     const x = cx - w / 2, y = cy - h / 2;
     return (
@@ -1058,8 +1059,8 @@ const GateSVG = React.memo(function GateSVG({
         onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
       >
         <rect x={x} y={y} width={w} height={h} rx={4} ry={4}
-          fill={red} stroke={selected ? colors.select : red} strokeWidth={selected ? 3 : 2} />
-        <text x={cx} y={cy + 6} fontSize={16} textAnchor="middle" fill={textColor} style={{ fontWeight: 700 }}>
+          fill={H_FILL} stroke={selected ? colors.select : H_FILL} strokeWidth={selected ? 3 : 2} />
+        <text x={cx} y={cy + 6} fontSize={16} textAnchor="middle" fill={H_TEXT} style={{ fontWeight: 700 }}>
           H
         </text>
       </g>
@@ -1067,10 +1068,8 @@ const GateSVG = React.memo(function GateSVG({
   }
 
   if (gate.type === "MEASURE") {
-    // small oscilloscope box
     const w = 30, h = 22;
     const x = cx - w / 2, y = cy - h / 2;
-    const stroke = selected ? colors.select : "#aab2bf";
     return (
       <g
         transform={`translate(${tx}, ${ty})`}
@@ -1078,16 +1077,14 @@ const GateSVG = React.memo(function GateSVG({
         onMouseDown={(e) => handleMouseDown(e, xCenter, cellH / 2)}
         onTouchStart={(e) => handleTouchStart(e, xCenter, cellH / 2)}
       >
-        <rect x={x} y={y} width={w} height={h} rx={4} ry={4} fill="none" stroke={stroke} strokeWidth={selected ? 3 : 2} />
-        <path d={`M ${x + 4} ${cy + 6} q 6 -16 12 0 q 6 16 12 0`} fill="none" stroke={stroke} strokeWidth={2} />
+        <rect x={x} y={y} width={w} height={h} rx={4} ry={4} fill="none" stroke={MEAS_STROKE} strokeWidth={selected ? 3 : 2} />
+        <path d={`M ${x + 4} ${cy + 6} q 6 -16 12 0 q 6 16 12 0`} fill="none" stroke={MEAS_STROKE} strokeWidth={2} />
       </g>
     );
   }
 
-  // fallback (shouldn’t hit)
   return null;
 });
-
 // ================= Counts & Chart =================
 function CountsTable({ counts }: { counts: Record<string, number> }) {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
