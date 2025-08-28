@@ -1,4 +1,4 @@
-/* Base */
+/* ================== Base ================== */
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -10,13 +10,36 @@ html, body, #root {
 body.theme-light { background: #ffffff; color: #1f2937; }
 body.theme-dark  { background: #0f172a; color: #f8fafc; }
 
-/* Layout helpers */
-.app-wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+/* ================== Layout helpers ================== */
+.app-wrap {
+  width: 100%;
+  max-width: none;             /* full-bleed */
+  min-height: 100vh;
+  padding: 0;                  /* gutters handled per-section */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 
-/* Cards & panels */
+/* NEW: utilities so grid/flex children can shrink instead of forcing the page to grow */
+.fullpane { min-height: 0; min-width: 0; }      /* use on grid items */
+.right-pane {                                     /* right column (canvas + chart) */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;                                  /* critical for inner scroll */
+}
+.canvas-card {                                    /* wrapper card for canvas area */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ================== Cards & panels ================== */
 .card {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -30,7 +53,7 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
   box-shadow: none;
 }
 
-/* Controls */
+/* ================== Controls ================== */
 .btn {
   background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;
   padding: 6px 12px; font-size: 14px; cursor: pointer;
@@ -47,16 +70,18 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
   background: #0b1324; border-color: #1e293b; color: #e2e8f0;
 }
 
-/* Canvas shell – scroll/zoom container */
+/* ================== Canvas shell (scroll/zoom container) ================== */
+/* Single, consolidated definition (remove 70vh / calc hacks) */
 .canvas-shell {
   position: relative;
-  height: 70vh;
-  min-height: 360px;
-  max-height: 85vh;
+  flex: 1;                      /* fill available space in its card */
+  min-height: 0;                /* allow inner scroll instead of growing parent */
+  width: 100%;
+  height: 100%;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   background: #ffffff;
-  overflow: auto;
+  overflow: auto;               /* ← scrollbars appear when content exceeds area */
 }
 .theme-dark .canvas-shell { border-color: #1e293b; background: #0b1324; }
 .canvas-shell.panning { cursor: grabbing; }
@@ -68,55 +93,8 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
 .canvas-shell::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.2); }
 .canvas-shell { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.22) rgba(0,0,0,.06); }
 
-/* Zoom toolbar (optional sticky control look) */
-.zoom-toolbar {
-  position: sticky; top: 8px; float: right;
-  display: inline-flex; gap: 8px; align-items: center;
-  background: rgba(255,255,255,0.85);
-  border: 1px solid #e5e7eb; border-radius: 10px;
-  padding: 6px 8px; backdrop-filter: blur(8px);
-}
-.theme-dark .zoom-toolbar {
-  background: rgba(15,23,42,0.7); border-color: #1e293b;
-}
-
-/* Bar chart bars */
-.bar { background: #60a5fa; border-radius: 6px; }
-
-.app-wrap {
-  width: 100%;
-  max-width: none;   /* remove any centering constraint */
-  min-height: 100vh;
-  padding: 0;        /* remove side padding so it touches screen edges */
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Canvas shell fills the remaining viewport height under the header/controls */
-.canvas-shell {
-  position: relative;
-  height: calc(100vh - 180px);  /* adjust this if your header gets taller/shorter */
-  min-height: 360px;
-  max-height: none;             /* no cap */
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #ffffff;
-  overflow: auto;
-}
-.theme-dark .canvas-shell { border-color: #1e293b; background: #0b1324; }
-.canvas-shell.panning { cursor: grabbing; }
-
-.canvas-shell {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #ffffff;
-  overflow: auto;
-}
-
+/* ================== Zoom toolbar (in-canvas) ================== */
+/* Absolute (not sticky) to avoid layout quirks */
 .zoom-toolbar {
   position: absolute;
   top: 12px;
@@ -140,3 +118,6 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
   font-size: 16px;
   line-height: 1;
 }
+
+/* ================== Charts ================== */
+.bar { background: #60a5fa; border-radius: 6px; }

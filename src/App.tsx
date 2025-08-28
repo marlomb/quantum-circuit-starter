@@ -507,7 +507,7 @@ export default function App() {
      }}
       >
         {/* Left: Panels */}
-        <div className="stack">
+        <div className="stack fullpane">
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
             <div className="grid-2">
@@ -550,21 +550,22 @@ export default function App() {
         </div>
 
         {/* Right: Canvas + Probs */}
-        <div className="stack">
-          <div
-            className={`canvas-shell${panStartRef.current ? " panning" : ""}`}
-            ref={svgContainerRef}
-            onWheel={onContainerWheel}
-            onMouseDown={(e) => {
-              if (e.button === 1 || spaceDownRef.current) {
-                e.preventDefault();
-                beginPanScroll(e.clientX, e.clientY);
-              }
-            }}
-            onMouseMove={(e) => { if (panStartRef.current) movePanScroll(e.clientX, e.clientY); }}
-            onMouseUp={() => endPanScroll()}
-            onMouseLeave={() => endPanScroll()}
-          >
+        <div className="right-pane fullpane">
+          <div className="card canvas-card" style={{ marginBottom: 16 }}>
+            <div
+              className={`canvas-shell${panStartRef.current ? " panning" : ""}`}
+              ref={svgContainerRef}
+              onWheel={onContainerWheel}
+              onMouseDown={(e) => {
+                if (e.button === 1 || spaceDownRef.current) {
+                  e.preventDefault();
+                  beginPanScroll(e.clientX, e.clientY);
+                }
+              }}
+              onMouseMove={(e) => { if (panStartRef.current) movePanScroll(e.clientX, e.clientY); }}
+              onMouseUp={() => endPanScroll()}
+              onMouseLeave={() => endPanScroll()}
+            >
             {/* (Optional) mini zoom toolbar placeholder
             <div className="zoom-toolbar">
               <span>Zoom: {(canvasZoom*100).toFixed(0)}%</span>
@@ -601,6 +602,7 @@ export default function App() {
               zoom={canvasZoom}
             />
           </div>
+        </div>
 
           <div className="card">
             <h3 style={{ marginTop: 0 }}>State Probabilities</h3>
