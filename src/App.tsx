@@ -497,7 +497,8 @@ export default function App() {
 
       <section
         style={{
-        flex: 1,                              // take all remaining vertical space
+        flex: 1,
+        minHeight: 0,                                // take all remaining vertical space
         display: "grid",
         gridTemplateColumns: "minmax(280px, 360px) 1fr",
         gap: 16,
@@ -507,7 +508,7 @@ export default function App() {
      }}
       >
         {/* Left: Panels */}
-        <div className="stack fullpane">
+        <div className="stack fullpane left-pane">
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Gate Palette</h3>
             <div className="grid-2">

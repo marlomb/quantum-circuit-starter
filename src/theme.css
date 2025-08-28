@@ -39,6 +39,12 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
   flex-direction: column;
 }
 
+.left-pane {
+  min-height: 0;      /* allow it to shrink inside the grid row */
+  overflow: auto;     /* scroll its own content instead of stretching the grid */
+  padding-right: 2px; /* keeps the pretty scrollbar inside */
+}
+
 /* ================== Cards & panels ================== */
 .card {
   background: #ffffff;
