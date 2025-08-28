@@ -605,7 +605,7 @@ export default function App() {
           </div>
         </div>
 
-          <div className="card">
+          <div className="card chart-card">
             <h3 style={{ marginTop: 0 }}>State Probabilities</h3>
             <BarChart probs={probs} />
           </div>
