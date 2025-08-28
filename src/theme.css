@@ -116,3 +116,27 @@ body.theme-dark  { background: #0f172a; color: #f8fafc; }
   background: #ffffff;
   overflow: auto;
 }
+
+.zoom-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 6px 8px;
+  backdrop-filter: blur(6px);
+  z-index: 10;
+}
+.theme-dark .zoom-toolbar {
+  background: rgba(15,23,42,0.85);
+  border-color: #1e293b;
+}
+.zoom-toolbar .btn {
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1;
+}

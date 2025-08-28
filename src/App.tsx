@@ -492,8 +492,6 @@ export default function App() {
               style={{ width: 96, marginLeft: 6 }}
             />
           </label>
-
-          <button className="btn" onClick={() => setFitKey(k => k + 1)} title="Fit to view">Fit</button>
         </div>
       </header>
 
@@ -571,7 +569,25 @@ export default function App() {
             <div className="zoom-toolbar">
               <span>Zoom: {(canvasZoom*100).toFixed(0)}%</span>
             </div> */}
-
+            <div className="zoom-toolbar">
+              <button
+                className="btn"
+                onClick={() => setCanvasZoom(z => Math.min(z * 1.2, 4))}
+                title="Zoom in"
+              >
+                +
+              </button>
+              <button
+                className="btn"
+                onClick={() => setCanvasZoom(z => Math.max(z / 1.2, 0.25))}
+                title="Zoom out"
+              >
+                –
+              </button>
+              <span style={{ fontSize: 13, opacity: 0.8 }}>
+                {(canvasZoom * 100).toFixed(0)}%
+              </span>
+            </div>
             <CircuitSVG
               circuit={circuit}
               themeKey={theme}
